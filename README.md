@@ -1,7 +1,6 @@
-Perplexity MoE Kernels
-==========
+# Perplexity MoE Kernels
 
-# Installation
+## Installation
 
 ```bash
 cd pplx-kernels
@@ -9,56 +8,34 @@ TORCH_CUDA_ARCH_LIST=9.0a+PTX python3 setup.py bdist_wheel
 pip install dist/*.whl
 ```
 
-# Testing
+## Single-node Testing and Benchmarking
 
-To build the C++ tests and benchmarks:
+Test:
 
 ```bash
-cd pplx-kernels
-mkdir build-cmake
-cd build-cmake
-
-TORCH_PREFIX_PATH=$(python3 -c 'import torch; print(torch.utils.cmake_prefix_path)')
-
-cmake ../csrc \
-    -GNinja \
-    -DCMAKE_PREFIX_PATH=$TORCH_PREFIX_PATH \
-    -DTORCH_CUDA_ARCH_LIST=9.0a+PTX \
-    -DWITH_TESTS=ON \
-    -DWITH_BENCHMARKS=ON
-
-ninja test_all_to_all bench_all_to_all
+pytest -svx --tb=short tests
 ```
 
-To run the all-to-all tests on one node:
+Benchmark:
 
 ```bash
-NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./test_all_to_all
-```
-
-
-To run the all-to-all benchmarks on one node:
-
-```bash
-NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./bench_all_to_all
-```
-
-
-# Inter-Node Benchmarks
-
-To test on a 32-device cluster spread across 4 nodes, run the following command on all nodes, alternating the rank from 0 to 3 and setting the master address to point to the rank-0 node:
-
-```bash
-export NODE_RANK=<rank>
-export WORLD_SIZE=32
-export WORLD_LOCAL_SIZE=8
-export MASTER_ADDR=<master-address>
-export MASTER_PORT=29500
-export NVSHMEM_IB_ENABLE_IBGDA=1
 python3 -m tests.bench_all_to_all
 ```
 
-# Benchmark Results
+## Multi-node Testing and Benchmarking
+
+```bash
+export NODE_RANK= # 0, 1, ..., num_nodes-1
+export WORLD_SIZE= # num_nodes * 8
+export WORLD_LOCAL_SIZE=8
+export MASTER_ADDR= # IP address of rank-0 node
+export MASTER_PORT=29500
+export NVSHMEM_IB_ENABLE_IBGDA=1
+```
+
+After settings these environment variables, commands to run the tests and benchmarks are the same as the single-node case.
+
+## Benchmark Results
 
 1 token per GPU:
 
@@ -92,3 +69,38 @@ python3 -m tests.bench_all_to_all
 | NVLINK NVSHMEM AtA | x                  | x                  | x                  | x                 | 6585.3μs ±  2.4μs |
 |  IBGDA NVSHMEM AtA | 6180.1μs ± 344.7μs | 6916.3μs ± 315.4μs | 4603.4μs ± 133.1μs | 3444.8μs ± 15.3μs | x                 |
 |  IBRC NVSHMEM AtA  | 6378.5μs ± 375.9μs | 6625.1μs ± 371.3μs | 4371.3μs ± 148.8μs | 3410.1μs ± 20.2μs | x                 |
+
+
+## C++ Testing
+
+To build the C++ tests and benchmarks:
+
+```bash
+cd pplx-kernels
+mkdir build-cmake
+cd build-cmake
+
+TORCH_PREFIX_PATH=$(python3 -c 'import torch; print(torch.utils.cmake_prefix_path)')
+
+cmake ../csrc \
+    -GNinja \
+    -DCMAKE_PREFIX_PATH=$TORCH_PREFIX_PATH \
+    -DTORCH_CUDA_ARCH_LIST=9.0a+PTX \
+    -DWITH_TESTS=ON \
+    -DWITH_BENCHMARKS=ON
+
+ninja test_all_to_all bench_all_to_all
+```
+
+To run the all-to-all tests on one node:
+
+```bash
+NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./test_all_to_all
+```
+
+
+To run the all-to-all benchmarks on one node:
+
+```bash
+NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./bench_all_to_all
+```
