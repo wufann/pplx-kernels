@@ -1,0 +1,6 @@
+build-cmake
+build
+pplx_kernels/*.so
+*.egg-info
+*.pyc
+data
