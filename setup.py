@@ -8,6 +8,7 @@ from setuptools.command.build_ext import build_ext
 
 VERSION = "0.0.1"
 
+
 def _get_torch_cmake_prefix_path() -> str:
     import torch
 

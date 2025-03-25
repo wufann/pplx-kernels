@@ -2,8 +2,8 @@
 
 add_library(all_to_all_lib STATIC
     all_to_all.cpp
-    internode_scatter.cu
-    internode_gather.cu
+    internode_dispatch.cu
+    internode_combine.cu
     internode.cpp
 )
 target_link_libraries(all_to_all_lib PUBLIC

@@ -1,3 +1,5 @@
+# pyright: reportCallIssue=false
+
 from collections.abc import Sequence
 
 import torch

@@ -125,7 +125,7 @@ def _do_test_all_to_all(
                 [f"r{r}t{t}" for r, t in expert_token_from[expert_idx]],
             )
 
-    # Scatter
+    # Dispatch
     num_local_experts = moe.num_experts // world_size
     expert_num_tokens = torch.empty(
         num_local_experts,
@@ -149,8 +149,8 @@ def _do_test_all_to_all(
             device=device,
         )
     bound_m = torch.tensor([rank_data.num_tokens], dtype=torch.uint32, device=device)
-    logger.debug("[rank=%d] Scatter", rank)
-    ata.scatter(
+    logger.debug("[rank=%d] Dispatch", rank)
+    ata.dispatch(
         out_expert_num_tokens=expert_num_tokens,
         out_expert_x=expert_x,
         out_expert_x_scale=expert_x_scale,
@@ -162,7 +162,7 @@ def _do_test_all_to_all(
         bound_m=bound_m,
     )
     torch.cuda.synchronize()
-    logger.debug("[rank=%d] Scatter done", rank)
+    logger.debug("[rank=%d] Dispatch done", rank)
 
     # Print and verify the output
     for i_rank in range(world_size):
@@ -214,7 +214,7 @@ def _do_test_all_to_all(
     val = 1.5
     expert_y = expert_x.to(moe.out_dtype) * val
 
-    # Gather
+    # Combine
     y = torch.full(
         (moe.max_num_tokens, moe.hidden_dim),
         torch.nan,
@@ -222,8 +222,8 @@ def _do_test_all_to_all(
         device=device,
     )
 
-    logger.debug("[rank=%d] Gather", rank)
-    ata.gather(
+    logger.debug("[rank=%d] Combine", rank)
+    ata.combine(
         out_tokens=y,
         indices=rank_data.indices.to(device).to(torch.uint32),
         weights=rank_data.weights.to(device),
@@ -231,7 +231,7 @@ def _do_test_all_to_all(
         bound_m=bound_m,
     )
     torch.cuda.synchronize()
-    logger.debug("[rank=%d] Gather done", rank)
+    logger.debug("[rank=%d] Combine done", rank)
 
     # Destroy.
     ata.destroy()

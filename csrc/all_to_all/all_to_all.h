@@ -66,7 +66,7 @@ protected:
   /// The maximum number of tokens in a batch.
   const size_t maxBatchTokens;
 
-  /// @section Internal buffers communicating between scatter and gather.
+  /// @section Internal buffers communicating between dispatch and combine.
   uint32_t *numTokensPerDP = nullptr;
   uint32_t *sourceIndex = nullptr;
   uint32_t *sourceExpert = nullptr;

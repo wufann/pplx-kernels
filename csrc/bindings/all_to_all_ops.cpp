@@ -59,7 +59,7 @@ SplitMode getSplitMode(bool doSend, bool doRecv) {
   }
 }
 
-void scatter(
+void dispatch(
     fptr_t ptr,
     at::Tensor &outExpertNumTokens,
     at::Tensor &outExpertX,
@@ -93,7 +93,7 @@ void scatter(
   }
 
   auto *all_to_all = (AllToAllInterNode *)ptr;
-  all_to_all->scatter(
+  all_to_all->dispatch(
       Strided1D<int32_t>(
           outExpertNumTokens.data_ptr<int32_t>(), (size_t)outExpertNumTokens.stride(0)
       ),
@@ -125,7 +125,7 @@ void scatter(
   );
 }
 
-void gather(
+void combine(
     fptr_t ptr,
     at::Tensor &outTokens,
     const at::Tensor &indices,
@@ -150,7 +150,7 @@ void gather(
 
   auto *all_to_all = (AllToAllInterNode *)ptr;
   auto run = [&]<typename T>() {
-    all_to_all->gather<T>(
+    all_to_all->combine<T>(
         Strided1D<nv_bfloat16>((nv_bfloat16 *)outTokens.data_ptr(), (size_t)outTokens.stride(0)),
         Strided2D<uint32_t>(
             indices.data_ptr<uint32_t>(), (size_t)indices.stride(1), (size_t)indices.stride(0)
@@ -188,6 +188,6 @@ void gather(
 void pplx::register_all_to_all_ops(torch::Library &m) {
   m.def("all_to_all_create", &create);
   m.def("all_to_all_destroy", &destroy);
-  m.def("all_to_all_scatter", &scatter);
-  m.def("all_to_all_gather", &gather);
+  m.def("all_to_all_dispatch", &dispatch);
+  m.def("all_to_all_combine", &combine);
 }

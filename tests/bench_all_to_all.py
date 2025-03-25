@@ -128,10 +128,10 @@ def bench_all_to_all(
     nvshmem_out = nvshmem_malloc(a2a_shape, torch.uint8, device)
 
     # Compute stats
-    scatter_bytes = (
+    dispatch_bytes = (
         rank_data.num_tokens * moe.experts_per_token * hidden_dim_bytes_with_scale
     )
-    gather_bytes = (
+    combine_bytes = (
         rank_data.num_tokens
         * moe.experts_per_token
         * (moe.hidden_dim // dp_size)
@@ -153,7 +153,7 @@ def bench_all_to_all(
             nvshmem_barrier_all_on_current_stream()
             e0.record(stream)
 
-            ata.scatter(
+            ata.dispatch(
                 out_expert_num_tokens=expert_num_tokens,
                 out_expert_x=expert_x,
                 out_expert_x_scale=expert_x_scale,
@@ -164,7 +164,7 @@ def bench_all_to_all(
             )
             e1.record(stream)
 
-            ata.gather(
+            ata.combine(
                 out_tokens=y,
                 indices=indices,
                 weights=weights,
@@ -181,30 +181,30 @@ def bench_all_to_all(
 
         # Get latency
         stream.synchronize()
-        sum_scatter_us = 0.0
-        sum_gather_us = 0.0
+        sum_dispatch_us = 0.0
+        sum_combine_us = 0.0
         sum_a2a_us = 0.0
         sum_nvshmem_us = 0.0
         for e0, e1, e2, e3, e4 in events:
-            sum_scatter_us += e0.elapsed_time(e1) * 1e3
-            sum_gather_us += e1.elapsed_time(e2) * 1e3
+            sum_dispatch_us += e0.elapsed_time(e1) * 1e3
+            sum_combine_us += e1.elapsed_time(e2) * 1e3
             sum_a2a_us += e2.elapsed_time(e3) * 1e3
             sum_nvshmem_us += e3.elapsed_time(e4) * 1e3
-        scatter_us = sum_scatter_us / num_samples
-        gather_us = sum_gather_us / num_samples
+        dispatch_us = sum_dispatch_us / num_samples
+        combine_us = sum_combine_us / num_samples
         a2a_us = sum_a2a_us / num_samples
         nvshmem_us = sum_nvshmem_us / num_samples
-        scatter_gbps = scatter_bytes / scatter_us / 1e3
-        gather_gbps = gather_bytes / gather_us / 1e3
+        dispatch_gbps = dispatch_bytes / dispatch_us / 1e3
+        combine_gbps = combine_bytes / combine_us / 1e3
         a2a_gbps = a2a_bytes / a2a_us / 1e3
         nvshmem_gbps = nvshmem_bytes / nvshmem_us / 1e3
         return (
-            scatter_us,
-            gather_us,
+            dispatch_us,
+            combine_us,
             a2a_us,
             nvshmem_us,
-            scatter_gbps,
-            gather_gbps,
+            dispatch_gbps,
+            combine_gbps,
             a2a_gbps,
             nvshmem_gbps,
         )
@@ -221,7 +221,7 @@ def bench_all_to_all(
     with torch.cuda.nvtx.range("bench"):
         result = torch.tensor([run() for _ in range(num_repeat)])
     return (
-        (scatter_bytes, gather_bytes, a2a_bytes, nvshmem_bytes),
+        (dispatch_bytes, combine_bytes, a2a_bytes, nvshmem_bytes),
         result,
     )
 
@@ -261,12 +261,12 @@ def _worker_bench_all_to_all(
         "E/tok",
         "tok",
         "dim",
-        "Scatter_lat",
-        "Scatter_bw",
-        "Scatter_bytes",
-        "Gather_lat",
-        "Gather_bw",
-        "Gather_bytes",
+        "Dispatch_lat",
+        "Dispatch_bw",
+        "Dispatch_bytes",
+        "Combine_lat",
+        "Combine_bw",
+        "Combine_bytes",
         "Torch_lat",
         "Torch_bw",
         "Torch_bytes",
@@ -297,19 +297,19 @@ def _worker_bench_all_to_all(
         if pgi.world_size > config.num_experts:
             continue
         meta, result = bench_all_to_all(pgi, dp_size, config)
-        scatter_bytes, gather_bytes, a2a_bytes, nvshmem_bytes = meta
+        dispatch_bytes, combine_bytes, a2a_bytes, nvshmem_bytes = meta
         if pgi.rank == 0:
             row: dict[str, str] = {
                 "E": f"{config.num_experts}",
                 "E/tok": f"{config.experts_per_token}",
                 "tok": f"{config.max_num_tokens}",
                 "dim": f"{config.hidden_dim}",
-                "Scatter_lat": f"{result[:, 0].mean():4.1f}μs ± {result[:, 0].std():4.1f}μs",
-                "Scatter_bw": f"{result[:, 4].mean():2.3f}GB/s",
-                "Scatter_bytes": f"{scatter_bytes}",
-                "Gather_lat": f"{result[:, 1].mean():4.1f}μs ± {result[:, 1].std():4.1f}μs",
-                "Gather_bw": f"{result[:, 5].mean():2.3f}GB/s",
-                "Gather_bytes": f"{gather_bytes}",
+                "Dispatch_lat": f"{result[:, 0].mean():4.1f}μs ± {result[:, 0].std():4.1f}μs",
+                "Dispatch_bw": f"{result[:, 4].mean():2.3f}GB/s",
+                "Dispatch_bytes": f"{dispatch_bytes}",
+                "Combine_lat": f"{result[:, 1].mean():4.1f}μs ± {result[:, 1].std():4.1f}μs",
+                "Combine_bw": f"{result[:, 5].mean():2.3f}GB/s",
+                "Combine_bytes": f"{combine_bytes}",
                 "Torch_lat": f"{result[:, 2].mean():4.1f}μs ± {result[:, 2].std():4.1f}μs",
                 "Torch_bw": f"{result[:, 6].mean():2.3f}GB/s",
                 "Torch_bytes": f"{a2a_bytes}",

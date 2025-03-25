@@ -1,6 +1,11 @@
 build-cmake
 build
-pplx_kernels/*.so
+*.so
 *.egg-info
 *.pyc
 data
+dist
+.ruff_cache
+.mypy_cache
+.pytest_cache
+__pycache__

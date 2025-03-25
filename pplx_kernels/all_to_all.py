@@ -1,3 +1,5 @@
+# pyright: reportCallIssue=false
+
 import torch
 
 from .ops import _ops
@@ -37,7 +39,7 @@ class AllToAll:
     def __del__(self) -> None:
         self.destroy()
 
-    def scatter(
+    def dispatch(
         self,
         out_expert_num_tokens: torch.Tensor,
         out_expert_x: torch.Tensor,
@@ -58,7 +60,7 @@ class AllToAll:
             assert out_expert_x_scale is None
             assert dp_x_scale is None
 
-        _ops.all_to_all_scatter(
+        _ops.all_to_all_dispatch(
             self._ptr,
             out_expert_num_tokens,
             out_expert_x,
@@ -71,7 +73,7 @@ class AllToAll:
             do_recv,
         )
 
-    def gather(
+    def combine(
         self,
         out_tokens: torch.Tensor,
         indices: torch.Tensor,
@@ -82,7 +84,7 @@ class AllToAll:
         do_recv: bool = True,
     ) -> None:
         assert self._ptr is not None
-        _ops.all_to_all_gather(
+        _ops.all_to_all_combine(
             self._ptr,
             out_tokens,
             indices,

@@ -36,42 +36,42 @@ AllToAllInterNode::AllToAllInterNode(
   ROSE_ASSERT(numTokensBuffer != nullptr, "failed to allocate numTokensBuffer");
   cudaMemset(numTokensBuffer, 0, sizeof(uint64_t) * numLocalExperts * numDPGroups);
 
-  numScatterRecvBuffer =
+  numDispatchRecvBuffer =
       (uint64_t *)nvshmem_malloc(sizeof(uint64_t) * numLocalExperts * numDPGroups);
-  ROSE_ASSERT(numScatterRecvBuffer != nullptr, "failed to allocate numScatterRecvBuffer");
-  cudaMemset(numScatterRecvBuffer, 0, sizeof(uint64_t) * numLocalExperts * numDPGroups);
+  ROSE_ASSERT(numDispatchRecvBuffer != nullptr, "failed to allocate numDispatchRecvBuffer");
+  cudaMemset(numDispatchRecvBuffer, 0, sizeof(uint64_t) * numLocalExperts * numDPGroups);
 
-  gatherSignalBuffer = (uint64_t *)nvshmem_malloc(sizeof(uint64_t) * maxNumTokens);
-  ROSE_ASSERT(gatherSignalBuffer != nullptr, "failed to allocate gatherSignalBuffer");
-  cudaMemset(gatherSignalBuffer, 0, sizeof(uint64_t) * maxNumTokens);
+  combineSignalBuffer = (uint64_t *)nvshmem_malloc(sizeof(uint64_t) * maxNumTokens);
+  ROSE_ASSERT(combineSignalBuffer != nullptr, "failed to allocate combineSignalBuffer");
+  cudaMemset(combineSignalBuffer, 0, sizeof(uint64_t) * maxNumTokens);
 
-  gatherSyncBuffer = (uint64_t *)nvshmem_malloc(sizeof(uint64_t) * worldSize);
-  ROSE_ASSERT(gatherSyncBuffer != nullptr, "failed to allocate gatherSyncBuffer");
-  cudaMemset(gatherSyncBuffer, 0, sizeof(uint64_t) * worldSize);
+  combineSyncBuffer = (uint64_t *)nvshmem_malloc(sizeof(uint64_t) * worldSize);
+  ROSE_ASSERT(combineSyncBuffer != nullptr, "failed to allocate combineSyncBuffer");
+  cudaMemset(combineSyncBuffer, 0, sizeof(uint64_t) * worldSize);
 
-  // Buffers for scatter.
+  // Buffers for dispatch.
   const size_t perTokenBytes =
       round_up<size_t>(hiddenDimBytes + hiddenDimScaleBytes + sizeof(uint32_t), 16);
-  xScatterIn = (std::byte *)nvshmem_malloc(maxNumTokens * perTokenBytes);
-  ROSE_ASSERT(xScatterIn != nullptr, "failed to allocate xScatterIn");
-  xScatterOut = (std::byte *)nvshmem_malloc(maxBatchTokens * perTokenBytes);
-  ROSE_ASSERT(xScatterOut != nullptr, "failed to allocate xScatterOut");
+  xDispatchIn = (std::byte *)nvshmem_malloc(maxNumTokens * perTokenBytes);
+  ROSE_ASSERT(xDispatchIn != nullptr, "failed to allocate xDispatchIn");
+  xDispatchOut = (std::byte *)nvshmem_malloc(maxBatchTokens * perTokenBytes);
+  ROSE_ASSERT(xDispatchOut != nullptr, "failed to allocate xDispatchOut");
 
-  // Buffers for gather. The allocations are a bit wider to accommodate all
+  // Buffers for combine. The allocations are a bit wider to accommodate all
   // possible data types (primarily float for testing and bfloat16 for prod).
-  xGatherIn = (std::byte *)nvshmem_malloc(maxBatchTokens * hiddenDim * sizeof(float));
-  ROSE_ASSERT(xGatherIn != nullptr, "failed to allocate xGatherIn");
-  xGatherOut = (std::byte *)nvshmem_malloc(maxNumTokens * numExperts * hiddenDim * sizeof(float));
-  ROSE_ASSERT(xGatherOut != nullptr, "failed to allocate xGatherOut");
+  xCombineIn = (std::byte *)nvshmem_malloc(maxBatchTokens * hiddenDim * sizeof(float));
+  ROSE_ASSERT(xCombineIn != nullptr, "failed to allocate xCombineIn");
+  xCombineOut = (std::byte *)nvshmem_malloc(maxNumTokens * numExperts * hiddenDim * sizeof(float));
+  ROSE_ASSERT(xCombineOut != nullptr, "failed to allocate xCombineOut");
 }
 
 AllToAllInterNode::~AllToAllInterNode() {
   nvshmem_free(numTokensBuffer);
-  nvshmem_free(numScatterRecvBuffer);
-  nvshmem_free(gatherSignalBuffer);
-  nvshmem_free(gatherSyncBuffer);
-  nvshmem_free(xScatterIn);
-  nvshmem_free(xScatterOut);
-  nvshmem_free(xGatherIn);
-  nvshmem_free(xGatherOut);
+  nvshmem_free(numDispatchRecvBuffer);
+  nvshmem_free(combineSignalBuffer);
+  nvshmem_free(combineSyncBuffer);
+  nvshmem_free(xDispatchIn);
+  nvshmem_free(xDispatchOut);
+  nvshmem_free(xCombineIn);
+  nvshmem_free(xCombineOut);
 }

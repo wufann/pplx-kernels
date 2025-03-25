@@ -11,7 +11,7 @@
 using namespace pplx;
 
 template <unsigned NUM_WARPS, bool DO_SEND, bool DO_RECV>
-__global__ __launch_bounds__(NUM_WARPS * 32, 1) void scatterKernel(
+__global__ __launch_bounds__(NUM_WARPS * 32, 1) void dispatchKernel(
     int32_t *outNumTokensPerExpert,
     size_t outNumTokensPerExpertStrideElem,
     std::byte *expertX,
@@ -240,7 +240,7 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void scatterKernel(
   }
 }
 
-void AllToAllInterNode::scatter(
+void AllToAllInterNode::dispatch(
     const Strided1D<int32_t> &outNumTokensPerExpert,
     const Strided2D<std::byte> &expertX,
     const Strided2D<std::byte> &expertXScale,
@@ -294,16 +294,16 @@ void AllToAllInterNode::scatter(
       &sourceOffset,
       &sourceGroup,
       &numTokensBuffer,
-      &numScatterRecvBuffer,
-      &xScatterIn,
-      &xScatterOut,
+      &numDispatchRecvBuffer,
+      &xDispatchIn,
+      &xDispatchOut,
   };
 
-  nvtxRangePush("scatter");
+  nvtxRangePush("dispatch");
   switch (splitMode) {
   case SplitMode::SEND:
     CUDACHECK(cudaLaunchKernel(
-        &scatterKernel<NUM_WARPS, true, false>,
+        &dispatchKernel<NUM_WARPS, true, false>,
         dimGrid,
         dimBlock,
         args,
@@ -313,12 +313,12 @@ void AllToAllInterNode::scatter(
     break;
   case SplitMode::RECV:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &scatterKernel<NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
+        &dispatchKernel<NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::NONE:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &scatterKernel<NUM_WARPS, true, true>,
+        &dispatchKernel<NUM_WARPS, true, true>,
         dimGrid,
         dimBlock,
         args,

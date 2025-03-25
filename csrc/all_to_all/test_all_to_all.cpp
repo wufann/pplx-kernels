@@ -20,7 +20,7 @@
 using namespace pplx;
 
 template <typename T, typename Kernel>
-bool testScatterGather(
+bool testDispatchCombine(
     cudaStream_t stream,
     unsigned dpRank,
     unsigned dpSize,
@@ -92,7 +92,7 @@ bool testScatterGather(
       hiddenDimScaleBytes
   );
 
-  allToAll.scatter(
+  allToAll.dispatch(
       Strided1D<int32_t>(outTokensPerExpertDevice, 1),
       Strided2D<std::byte>(
           outExpertDevice, hiddenDimBytes, hiddenDimBytes * maxNumTokens * numDPGroups
@@ -112,7 +112,7 @@ bool testScatterGather(
   );
   CUDACHECK(cudaStreamSynchronize(stream));
 
-  allToAll.gather(
+  allToAll.combine(
       Strided1D<nv_bfloat16>(outTokensDevice, hiddenDim),
       Strided2D<uint32_t>(indicesDevice, 1, expertsPerToken),
       Strided2D<float>(weightsDevice, 1, expertsPerToken),
@@ -322,10 +322,10 @@ int main(int argc, char **argv) {
 
   // Run the tests.
   int exit_code = EXIT_SUCCESS;
-  if (!testScatterGather<float, AllToAllInterNode>(stream, rank / 2, 2, rank, world_size)) {
+  if (!testDispatchCombine<float, AllToAllInterNode>(stream, rank / 2, 2, rank, world_size)) {
     exit_code = EXIT_FAILURE;
   }
-  if (!testScatterGather<nv_bfloat16, AllToAllInterNode>(stream, rank / 2, 2, rank, world_size)) {
+  if (!testDispatchCombine<nv_bfloat16, AllToAllInterNode>(stream, rank / 2, 2, rank, world_size)) {
     exit_code = EXIT_FAILURE;
   }
 

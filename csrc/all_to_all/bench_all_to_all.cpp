@@ -1,4 +1,4 @@
-// All-to-all scatter benchmark
+// All-to-all benchmark
 
 #include "all_to_all/internode.h"
 #include "all_to_all/test_utils.h"
@@ -100,14 +100,14 @@ std::pair<Time, Time> benchmark(
   // Warmup
   auto run = [&]() -> std::pair<float, float> {
     nvshmemx_barrier_all_on_stream(stream);
-    // Scatter.
+    // Dispatch.
     for (size_t i = 0; i < numSamples; i++) {
       nvshmemx_barrier_all_on_stream(stream);
       CUDACHECK(cudaStreamSynchronize(stream));
 
       CUDACHECK(cudaEventRecord(std::get<0>(events[i]), stream));
 
-      allToAll.scatter(
+      allToAll.dispatch(
           Strided1D<int32_t>(outTokensPerExpertDevice, 1),
           Strided2D<std::byte>(
               outExpertDevice, hiddenDimBytes, hiddenDimBytes * config.numTokens * numPEs
@@ -128,7 +128,7 @@ std::pair<Time, Time> benchmark(
 
       CUDACHECK(cudaEventRecord(std::get<1>(events[i]), stream));
 
-      allToAll.gather<T>(
+      allToAll.combine<T>(
           Strided1D<nv_bfloat16>(outTokensDevice, config.hiddenDim),
           Strided2D<uint32_t>(indicesDevice, 1, config.expertsPerToken),
           Strided2D<float>(weightsDevice, 1, config.expertsPerToken),
@@ -145,15 +145,15 @@ std::pair<Time, Time> benchmark(
     }
 
     CUDACHECK(cudaStreamSynchronize(stream));
-    float totalScatterMs = 0.0f, totalGatherMs = 0.0f;
+    float totalDispatchMs = 0.0f, totalCombineMs = 0.0f;
     for (size_t i = 0; i < numSamples; i++) {
-      float scatterMs = 0.0f, gatherMs = 0.0f;
-      CUDACHECK(cudaEventElapsedTime(&scatterMs, std::get<0>(events[i]), std::get<1>(events[i])));
-      CUDACHECK(cudaEventElapsedTime(&gatherMs, std::get<1>(events[i]), std::get<2>(events[i])));
-      totalScatterMs += scatterMs;
-      totalGatherMs += gatherMs;
+      float dispatchMs = 0.0f, combineMs = 0.0f;
+      CUDACHECK(cudaEventElapsedTime(&dispatchMs, std::get<0>(events[i]), std::get<1>(events[i])));
+      CUDACHECK(cudaEventElapsedTime(&combineMs, std::get<1>(events[i]), std::get<2>(events[i])));
+      totalDispatchMs += dispatchMs;
+      totalCombineMs += combineMs;
     }
-    return {totalScatterMs / numSamples, totalGatherMs / numSamples};
+    return {totalDispatchMs / numSamples, totalCombineMs / numSamples};
   };
 
   MPI_Barrier(MPI_COMM_WORLD);
@@ -165,15 +165,15 @@ std::pair<Time, Time> benchmark(
 
   MPI_Barrier(MPI_COMM_WORLD);
   nvtxRangePush("benchmark");
-  std::vector<float> scatterTimeUs, gatherTimeUs;
+  std::vector<float> dispatchTimeUs, combineTimeUs;
   for (int i = 0; i < repeat; i++) {
-    auto [scatterTimeMs, gatherTimeMs] = run();
-    scatterTimeUs.push_back(scatterTimeMs * 1000);
-    gatherTimeUs.push_back(gatherTimeMs * 1000);
+    auto [dispatchTimeMs, combineTimeMs] = run();
+    dispatchTimeUs.push_back(dispatchTimeMs * 1000);
+    combineTimeUs.push_back(combineTimeMs * 1000);
   }
   nvtxRangePop();
 
-  return {average(scatterTimeUs), average(gatherTimeUs)};
+  return {average(dispatchTimeUs), average(combineTimeUs)};
 }
 
 } // namespace
@@ -240,15 +240,16 @@ int main(int argc, char **argv) {
   };
 
   for (const auto &config : configs) {
-    auto [scatter, gather] = benchmark<nv_bfloat16>(10, config, currentPE, numPEs, stream);
+    auto [dispatch, combine] = benchmark<nv_bfloat16>(10, config, currentPE, numPEs, stream);
     if (currentPE == 0) {
-      auto [scatterMean, scatterStddev] = scatter;
-      auto [gatherMean, gatherStddev] = gather;
+      auto [dispatchMean, dispatchStddev] = dispatch;
+      auto [combineMean, combineStddev] = combine;
       std::cout << std::setw(3) << config.numTokens << " " << std::setw(3) << config.numExperts
                 << " " << std::setw(3) << config.expertsPerToken << " " << std::setw(4)
                 << config.hiddenDim << " " << std::fixed << std::setprecision(3)
-                << "Scatter: " << std::setw(10) << scatterMean << "us ± " << scatterStddev << "us "
-                << "Gather: " << std::setw(10) << gatherMean << "us ± " << gatherStddev << "us"
+                << "Dispatch: " << std::setw(10) << dispatchMean << "us ± " << dispatchStddev
+                << "us "
+                << "Combine: " << std::setw(10) << combineMean << "us ± " << combineStddev << "us"
                 << std::endl;
     }
   }

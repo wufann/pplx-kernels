@@ -9,7 +9,7 @@
 using namespace pplx;
 
 template <typename T, size_t NUM_WARPS, bool DO_SEND, bool DO_RECV>
-__global__ __launch_bounds__(NUM_WARPS * 32, 1) void gatherKernel(
+__global__ __launch_bounds__(NUM_WARPS * 32, 1) void combineKernel(
     nv_bfloat16 *outTokens,
     size_t outTokensStrideElem,
     uint32_t *indices,
@@ -34,8 +34,8 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void gatherKernel(
     const uint32_t *sourceIndex,
     const uint32_t *sourceOffset,
     const uint32_t *sourceGroup,
-    uint64_t *gatherSignalBuffer,
-    uint64_t *gatherSyncBuffer,
+    uint64_t *combineSignalBuffer,
+    uint64_t *combineSyncBuffer,
     std::byte *xBufferIn,
     std::byte *xBufferOut
 ) {
@@ -50,7 +50,7 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void gatherKernel(
   if (DO_SEND) {
     for (unsigned i = blockIdx.x * numWarps + warpId; i < worldSize; i += gridDim.x * numWarps) {
       if (laneId == 0) {
-        nvshmemx_signal_op(&gatherSyncBuffer[rank], 1, NVSHMEM_SIGNAL_SET, i);
+        nvshmemx_signal_op(&combineSyncBuffer[rank], 1, NVSHMEM_SIGNAL_SET, i);
       }
     }
 
@@ -84,7 +84,7 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void gatherKernel(
         const unsigned index = dstExpert * maxNumTokens + source;
         std::byte *dstPtr = xBufferOut + index * stride;
         nvshmemx_putmem_signal_nbi_warp(
-            dstPtr, xTokenPtr, stride, &gatherSignalBuffer[source], 1, NVSHMEM_SIGNAL_ADD, dstRank
+            dstPtr, xTokenPtr, stride, &combineSignalBuffer[source], 1, NVSHMEM_SIGNAL_ADD, dstRank
         );
       }
     }
@@ -100,9 +100,9 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void gatherKernel(
     // Compute the weighed sum of the input tokens.
     const size_t localNumTokens = boundM ? __ldg(boundM) : m;
     for (unsigned i = blockIdx.x; i < localNumTokens; i += gridDim.x) {
-      nvshmem_uint64_wait_until(&gatherSignalBuffer[i], NVSHMEM_CMP_EQ, expertsPerToken);
+      nvshmem_uint64_wait_until(&combineSignalBuffer[i], NVSHMEM_CMP_EQ, expertsPerToken);
       __syncthreads();
-      gatherSignalBuffer[i] = 0;
+      combineSignalBuffer[i] = 0;
 
       nv_bfloat16 *dstPtr = outTokens + i * outTokensStrideElem;
       constexpr unsigned VEC_SIZE = 8;
@@ -134,14 +134,14 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void gatherKernel(
 
     for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < worldSize;
          i += gridDim.x * blockDim.x) {
-      nvshmem_uint64_wait_until(&gatherSyncBuffer[i], NVSHMEM_CMP_EQ, 1);
-      gatherSyncBuffer[i] = 0;
+      nvshmem_uint64_wait_until(&combineSyncBuffer[i], NVSHMEM_CMP_EQ, 1);
+      combineSyncBuffer[i] = 0;
     }
   }
 }
 
 template <typename T>
-void AllToAllInterNode::gather(
+void AllToAllInterNode::combine(
     const Strided1D<nv_bfloat16> &outTokens,
     const Strided2D<uint32_t> &indices,
     const Strided2D<float> &weights,
@@ -189,26 +189,26 @@ void AllToAllInterNode::gather(
       &sourceIndex,
       &sourceOffset,
       &sourceGroup,
-      &gatherSignalBuffer,
-      &gatherSyncBuffer,
-      &xGatherIn,
-      &xGatherOut};
+      &combineSignalBuffer,
+      &combineSyncBuffer,
+      &xCombineIn,
+      &xCombineOut};
 
-  nvtxRangePush("gather");
+  nvtxRangePush("combine");
   switch (splitMode) {
   case SplitMode::SEND:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &gatherKernel<T, NUM_WARPS, true, false>, dimGrid, dimBlock, args, 0, stream
+        &combineKernel<T, NUM_WARPS, true, false>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::RECV:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &gatherKernel<T, NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
+        &combineKernel<T, NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::NONE:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &gatherKernel<T, NUM_WARPS, true, true>, dimGrid, dimBlock, args, 0, stream
+        &combineKernel<T, NUM_WARPS, true, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   default:
@@ -217,8 +217,8 @@ void AllToAllInterNode::gather(
   nvtxRangePop();
 }
 
-#define INSTANTIATE_GATHER(T)                                                                      \
-  template void AllToAllInterNode::gather<T>(                                                      \
+#define INSTANTIATE_COMBINE(T)                                                                     \
+  template void AllToAllInterNode::combine<T>(                                                     \
       const Strided1D<nv_bfloat16> &outTokens,                                                     \
       const Strided2D<uint32_t> &indices,                                                          \
       const Strided2D<float> &weights,                                                             \
@@ -229,6 +229,6 @@ void AllToAllInterNode::gather(
       cudaStream_t stream                                                                          \
   );
 
-INSTANTIATE_GATHER(float)
-INSTANTIATE_GATHER(half)
-INSTANTIATE_GATHER(nv_bfloat16)
+INSTANTIATE_COMBINE(float)
+INSTANTIATE_COMBINE(half)
+INSTANTIATE_COMBINE(nv_bfloat16)

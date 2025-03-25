@@ -60,7 +60,7 @@ public:
   /// overlapping).
   ///
   /// @param stream The CUDA stream to launch the kernel on.
-  void scatter(
+  void dispatch(
       const Strided1D<int32_t> &outTokensPerExpert,
       const Strided2D<std::byte> &expertX,
       const Strided2D<std::byte> &expertXScale,
@@ -73,7 +73,7 @@ public:
       cudaStream_t stream
   );
 
-  /// Launches the all-to-all gather kernel.
+  /// Launches the all-to-all combine kernel.
   ///
   /// @param outTokens The output tokens.
   /// Shape: [numExperts, maxNumTokens].
@@ -97,7 +97,7 @@ public:
   ///
   /// @param stream The CUDA stream to launch the kernel on.
   template <typename T>
-  void gather(
+  void combine(
       const Strided1D<nv_bfloat16> &outTokens,
       const Strided2D<uint32_t> &indices,
       const Strided2D<float> &weights,
@@ -111,13 +111,13 @@ public:
 private:
   /// @section Pre-allocated symmetric shared memory workspace.
   uint64_t *numTokensBuffer = nullptr;
-  uint64_t *numScatterRecvBuffer = nullptr;
-  uint64_t *gatherSignalBuffer = nullptr;
-  uint64_t *gatherSyncBuffer = nullptr;
-  std::byte *xScatterIn = nullptr;
-  std::byte *xScatterOut = nullptr;
-  std::byte *xGatherIn = nullptr;
-  std::byte *xGatherOut = nullptr;
+  uint64_t *numDispatchRecvBuffer = nullptr;
+  uint64_t *combineSignalBuffer = nullptr;
+  uint64_t *combineSyncBuffer = nullptr;
+  std::byte *xDispatchIn = nullptr;
+  std::byte *xDispatchOut = nullptr;
+  std::byte *xCombineIn = nullptr;
+  std::byte *xCombineOut = nullptr;
 };
 
 } // namespace pplx

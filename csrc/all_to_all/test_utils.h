@@ -12,7 +12,7 @@
 
 namespace pplx {
 
-/// Test data for all-to-all scatter/gather.
+/// Test data for all-to-all dispatch/combine.
 template <typename T> struct RankTestData {
   const size_t m;
   const size_t hiddenDim;
