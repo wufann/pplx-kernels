@@ -1,5 +1,9 @@
 # Perplexity MoE Kernels
 
+## System Requirements
+
+To learn how to set up the system drivers and dependencies, refer to the [Install Driver and Dependencies](docs/install-driver-and-dependencies.md) guide.
+
 ## Installation
 
 ```bash
