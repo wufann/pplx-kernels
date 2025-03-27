@@ -2,9 +2,9 @@
 
 Features:
 
-✅ Cuda Graph support
-✅ Flexible transportation layers: NVLink, IBGDA, IBRC, EFA
-✅ Overlapping communication and computation
+* ✅ Cuda Graph support
+* ✅ Flexible transportation layers: NVLink, IBGDA, IBRC, EFA
+* ✅ Overlapping communication and computation
 
 ## System Requirements
 
