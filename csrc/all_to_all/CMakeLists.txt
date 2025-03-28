@@ -7,7 +7,8 @@ add_library(all_to_all_lib STATIC
     internode.cpp
 )
 target_link_libraries(all_to_all_lib PUBLIC
-    nvshmem::nvshmem
+    nvshmem::nvshmem_host
+    nvshmem::nvshmem_device
     CUDA::cudart
 )
 set_cuda_compile_options(all_to_all_lib)
@@ -22,7 +23,8 @@ if(WITH_TESTS)
         CUDA::cudart
         CUDA::cuda_driver
         MPI::MPI_CXX
-        nvshmem::nvshmem
+        nvshmem::nvshmem_host
+        nvshmem::nvshmem_device
     )
     set_cuda_compile_options(test_all_to_all)
     add_test(NAME AllToAllTest
@@ -39,6 +41,7 @@ if (WITH_BENCHMARKS)
         CUDA::cudart
         CUDA::cuda_driver
         MPI::MPI_CXX
-        nvshmem::nvshmem
+        nvshmem::nvshmem_host
+        nvshmem::nvshmem_device
     )
 endif()

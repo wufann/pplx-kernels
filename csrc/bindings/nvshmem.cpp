@@ -28,7 +28,6 @@ int64_t init(at::Tensor uid, int64_t rank, int64_t world_size) {
   TORCH_CHECK(
       uid.numel() == sizeof(nvshmemx_uniqueid_t),
       "Invalid unique id size (expected ",
-
       sizeof(nvshmemx_uniqueid_t),
       ", got ",
       uid.numel(),
