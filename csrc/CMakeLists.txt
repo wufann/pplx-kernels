@@ -68,6 +68,6 @@ target_link_libraries(pplx_kernels PUBLIC
     nvshmem::nvshmem
 )
 set_target_properties(pplx_kernels PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../pplx_kernels
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../src/pplx_kernels
     CUDA_SEPARABLE_COMPILATION ON
 )

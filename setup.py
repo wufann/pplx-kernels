@@ -74,8 +74,8 @@ class CleanCommand(Command):
                 "-rf",
                 "build",
                 "build-cmake",
-                "pplx-kernels.egg-info",
-                "pplx-kernels/libpplx-kernels.so",
+                "src/pplx_kernels.egg-info",
+                "src/pplx_kernels/libpplx_kernels.so",
             ]
         )
 
@@ -91,9 +91,10 @@ setup(
     name="pplx-kernels",
     version=VERSION,
     description="Perplexity Kernels",
-    packages=find_packages(),
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     package_data={
-        "pplx-kernels": ["libpplx-kernels.so", "py.typed"],
+        "pplx_kernels": ["libpplx_kernels.so", "py.typed"],
     },
     cmdclass={
         "build_ext": CMakeBuild,
