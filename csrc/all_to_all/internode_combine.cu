@@ -198,17 +198,17 @@ void AllToAllInterNode::combine(
   switch (splitMode) {
   case SplitMode::SEND:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &combineKernel<T, NUM_WARPS, true, false>, dimGrid, dimBlock, args, 0, stream
+        (void *)&combineKernel<T, NUM_WARPS, true, false>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::RECV:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &combineKernel<T, NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
+        (void *)&combineKernel<T, NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::NONE:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &combineKernel<T, NUM_WARPS, true, true>, dimGrid, dimBlock, args, 0, stream
+        (void *)&combineKernel<T, NUM_WARPS, true, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   default:

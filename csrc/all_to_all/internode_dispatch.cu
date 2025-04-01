@@ -303,7 +303,7 @@ void AllToAllInterNode::dispatch(
   switch (splitMode) {
   case SplitMode::SEND:
     CUDACHECK(cudaLaunchKernel(
-        &dispatchKernel<NUM_WARPS, true, false>,
+        (void *)&dispatchKernel<NUM_WARPS, true, false>,
         dimGrid,
         dimBlock,
         args,
@@ -313,12 +313,12 @@ void AllToAllInterNode::dispatch(
     break;
   case SplitMode::RECV:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &dispatchKernel<NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
+        (void *)&dispatchKernel<NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::NONE:
     CUDACHECK(cudaLaunchCooperativeKernel(
-        &dispatchKernel<NUM_WARPS, true, true>,
+        (void *)&dispatchKernel<NUM_WARPS, true, true>,
         dimGrid,
         dimBlock,
         args,
