@@ -220,6 +220,10 @@ def bench_all_to_all(
     num_repeat = 20
     with torch.cuda.nvtx.range("bench"):
         result = torch.tensor([run() for _ in range(num_repeat)])
+
+    # Cleanup
+    ata.destroy()
+
     return (
         (dispatch_bytes, combine_bytes, a2a_bytes, nvshmem_bytes),
         result,
