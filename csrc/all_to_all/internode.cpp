@@ -30,8 +30,11 @@ AllToAllInterNode::AllToAllInterNode(
           hiddenDim,
           hiddenDimBytes,
           hiddenDimScaleBytes
-      ) {
+      ),
+      maxBatchTokens(numLocalExperts * numDPGroups * maxNumTokens) {
   // Buffers for token counts.
+  numTokensPerDP = mallocZeroBuffer<uint32_t>(numLocalExperts * numDPGroups);
+
   numTokensBuffer = (uint64_t *)nvshmem_malloc(sizeof(uint64_t) * numLocalExperts * numDPGroups);
   ROSE_ASSERT(numTokensBuffer != nullptr, "failed to allocate numTokensBuffer");
   cudaMemset(numTokensBuffer, 0, sizeof(uint64_t) * numLocalExperts * numDPGroups);
@@ -63,9 +66,18 @@ AllToAllInterNode::AllToAllInterNode(
   ROSE_ASSERT(xCombineIn != nullptr, "failed to allocate xCombineIn");
   xCombineOut = (std::byte *)nvshmem_malloc(maxNumTokens * numExperts * hiddenDim * sizeof(float));
   ROSE_ASSERT(xCombineOut != nullptr, "failed to allocate xCombineOut");
+
+  // Buffers for token tracking.
+  sourceIndex = mallocZeroBuffer<uint32_t>(maxBatchTokens);
+  sourceExpert = mallocZeroBuffer<uint32_t>(maxBatchTokens);
+  sourceOffset = mallocZeroBuffer<uint32_t>(maxBatchTokens);
+  sourceGroup = mallocZeroBuffer<uint32_t>(maxBatchTokens);
+  sourceToken = mallocZeroBuffer<uint32_t>(maxBatchTokens);
+  tokenIndex = mallocZeroBuffer<uint32_t>(1);
 }
 
 AllToAllInterNode::~AllToAllInterNode() {
+  CUDACHECK(cudaFree(numTokensPerDP));
   nvshmem_free(numTokensBuffer);
   nvshmem_free(numDispatchRecvBuffer);
   nvshmem_free(combineSignalBuffer);
@@ -74,4 +86,11 @@ AllToAllInterNode::~AllToAllInterNode() {
   nvshmem_free(xDispatchOut);
   nvshmem_free(xCombineIn);
   nvshmem_free(xCombineOut);
+
+  CUDACHECK(cudaFree(sourceIndex));
+  CUDACHECK(cudaFree(sourceExpert));
+  CUDACHECK(cudaFree(sourceOffset));
+  CUDACHECK(cudaFree(sourceGroup));
+  CUDACHECK(cudaFree(sourceToken));
+  CUDACHECK(cudaFree(tokenIndex));
 }

@@ -90,7 +90,7 @@ cd pplx-kernels
 mkdir build-cmake
 cd build-cmake
 
-TORCH_PREFIX_PATH=$(python3 -c 'import torch; print(torch.utils.cmake_prefix_path)')
+export TORCH_PREFIX_PATH=$(python3 -c 'import torch; print(torch.utils.cmake_prefix_path)')
 
 cmake ../csrc \
     -GNinja \
@@ -105,12 +105,12 @@ ninja test_all_to_all bench_all_to_all
 To run the all-to-all tests on one node:
 
 ```bash
-NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./test_all_to_all
+NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./all_to_all/test_all_to_all
 ```
 
 
 To run the all-to-all benchmarks on one node:
 
 ```bash
-NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./bench_all_to_all
+NVSHMEM_REMOTE_TRANSPORT=none mpirun -np 4 ./all_to_all/bench_all_to_all
 ```

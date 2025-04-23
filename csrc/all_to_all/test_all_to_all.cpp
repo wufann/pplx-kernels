@@ -9,31 +9,58 @@
 #include <algorithm>
 #include <iostream>
 #include <random>
+#include <unordered_set>
 
 #include "all_to_all/internode.h"
+#include "all_to_all/intranode.h"
 #include "all_to_all/test_utils.h"
 #include "core/buffer.h"
 #include "core/cuda_utils.h"
+#include "core/distributed.h"
 #include "core/mpi_utils.h"
 #include "core/utils.h"
 
 using namespace pplx;
 
-template <typename T, typename U, typename Kernel>
+template <typename T> struct std::hash<std::vector<T>> {
+  size_t operator()(const std::vector<T> &vec) const {
+    std::hash<T> hasher;
+    size_t hash = 0;
+    for (T i : vec) {
+      hash ^= hasher(i) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    }
+    return hash;
+  }
+};
+
+template <typename S, typename T> struct std::hash<std::pair<S, T>> {
+  size_t operator()(const std::pair<S, T> &pair) const {
+    std::hash<S> hasher;
+    size_t hash = 0;
+    hash ^= hasher(pair.first) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    hash ^= hasher(pair.second) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    return hash;
+  }
+};
+
+template <typename T, typename Kernel, typename... Args>
 bool testDispatchCombine(
     cudaStream_t stream,
     unsigned dpRank,
     unsigned dpSize,
     unsigned epRank,
     unsigned epSize,
-    uint32_t numExperts = 8,
-    size_t expertsPerToken = 3,
-    size_t hiddenDim = 16,
-    unsigned seed = 0xdeadbeef,
-    size_t minNumTokens = 5,
-    size_t maxNumTokens = 10,
-    size_t blockSize = 2
+    Args &&...args
 ) {
+  constexpr uint32_t numExperts = 8;
+  constexpr size_t expertsPerToken = 3;
+  constexpr size_t hiddenDim = 16;
+  constexpr unsigned seed = 0xdeadbeef;
+  constexpr size_t minNumTokens = 5;
+  constexpr size_t maxNumTokens = 10;
+  constexpr size_t blockSize = 2;
+  constexpr size_t numRepeats = 1;
+
   const uint32_t numDPGroups = epSize / dpSize;
 
   if (epRank == 0) {
@@ -75,7 +102,7 @@ bool testDispatchCombine(
   DeviceBuffer<float> outExpertScaleDevice(
       expertsPerRank * maxNumTokens * numDPGroups * rank.hiddenDimScale
   );
-  DeviceBuffer<U> outTokensDevice(maxNumTokens * hiddenDim);
+  DeviceBuffer<nv_bfloat16> outTokensDevice(maxNumTokens * hiddenDim);
 
   const size_t hiddenDimBytes = rank.hiddenDim * sizeof(T);
   const size_t hiddenDimScaleBytes = rank.hiddenDimScale * sizeof(float);
@@ -89,45 +116,49 @@ bool testDispatchCombine(
       dpSize,
       rank.hiddenDim,
       hiddenDimBytes,
-      hiddenDimScaleBytes
+      hiddenDimScaleBytes,
+      std::forward<Args>(args)...
   );
 
-  allToAll.dispatch(
-      Strided1D<int32_t>(outTokensPerExpertDevice, 1),
-      Strided2D<std::byte>(
-          outExpertDevice, hiddenDimBytes, hiddenDimBytes * maxNumTokens * numDPGroups
-      ),
-      Strided2D<std::byte>(
-          outExpertScaleDevice,
-          hiddenDimScaleBytes,
-          hiddenDimScaleBytes * maxNumTokens * numDPGroups
-      ),
-      Strided1D<std::byte>(xDevice, hiddenDimBytes),
-      Strided1D<std::byte>(xScaleDevice, hiddenDimScaleBytes),
-      Strided2D<uint32_t>(indicesDevice, 1, expertsPerToken),
-      rank.m,
-      nullptr,
-      SplitMode::NONE,
-      stream
-  );
-  CUDACHECK(cudaStreamSynchronize(stream));
+  for (size_t i = 0; i < numRepeats; ++i) {
+    allToAll.dispatch(
+        Strided1D<int32_t>(outTokensPerExpertDevice, 1),
+        Strided2D<std::byte>(
+            outExpertDevice, hiddenDimBytes, hiddenDimBytes * maxNumTokens * numDPGroups
+        ),
+        Strided3D<float>(
+            outExpertScaleDevice,
+            1,
+            rank.hiddenDimScale,
+            rank.hiddenDimScale * maxNumTokens * numDPGroups
+        ),
+        Strided1D<std::byte>(xDevice, hiddenDimBytes),
+        Strided2D<float>(xScaleDevice, 1, rank.hiddenDimScale),
+        Strided2D<uint32_t>(indicesDevice, 1, expertsPerToken),
+        rank.m,
+        nullptr,
+        SplitMode::NONE,
+        stream
+    );
+    CUDACHECK(cudaStreamSynchronize(stream));
 
-  allToAll.combine(
-      Strided1D<U>(outTokensDevice, hiddenDim),
-      Strided2D<uint32_t>(indicesDevice, 1, expertsPerToken),
-      Strided2D<float>(weightsDevice, 1, expertsPerToken),
-      Strided2D<T>(outExpertDevice, hiddenDim, hiddenDim * maxNumTokens * numDPGroups),
-      rank.m,
-      nullptr,
-      SplitMode::NONE,
-      stream
-  );
-  CUDACHECK(cudaStreamSynchronize(stream));
+    allToAll.combine(
+        Strided1D<nv_bfloat16>(outTokensDevice, hiddenDim),
+        Strided2D<uint32_t>(indicesDevice, 1, expertsPerToken),
+        Strided2D<float>(weightsDevice, 1, expertsPerToken),
+        Strided2D<T>(outExpertDevice, hiddenDim, hiddenDim * maxNumTokens * numDPGroups),
+        rank.m,
+        nullptr,
+        SplitMode::NONE,
+        stream
+    );
+    CUDACHECK(cudaStreamSynchronize(stream));
+  }
 
   HostBuffer<int32_t> outNumTokensPerExpertHost(outTokensPerExpertDevice);
   HostBuffer<T> outExpertHost(outExpertDevice);
   HostBuffer<float> outExpertScaleHost(outExpertScaleDevice);
-  HostBuffer<U> outTokensHost(outTokensDevice);
+  HostBuffer<nv_bfloat16> outTokensHost(outTokensDevice);
 
   // Print the results.
   for (unsigned i = 0; i < epSize; ++i) {
@@ -224,9 +255,22 @@ bool testDispatchCombine(
         continue;
       }
 
-      unsigned token = 0;
+      std::unordered_set<std::pair<std::vector<float>, std::vector<float>>> tokenSet;
       size_t offset = j * maxNumTokens * numDPGroups;
       size_t offsetScale = j * maxNumTokens * numDPGroups;
+      for (unsigned i = 0; i < indptr; ++i) {
+        std::vector<float> token;
+        for (unsigned l = 0; l < rank.hiddenDim; ++l) {
+          token.push_back((float)outExpertHost[(offset + i) * rank.hiddenDim + l]);
+        }
+        std::vector<float> scale;
+        for (unsigned l = 0; l < rank.hiddenDimScale; ++l) {
+          scale.push_back((float)outExpertScaleHost[(offsetScale + i) * rank.hiddenDimScale + l]);
+        }
+        tokenSet.emplace(std::move(token), std::move(scale));
+      }
+
+      unsigned token = 0;
       for (unsigned dp = 0; dp < numDPGroups; ++dp) {
         auto &rankData = rankTestData[dp];
 
@@ -242,26 +286,22 @@ bool testDispatchCombine(
             continue;
           }
 
-          for (size_t l = 0; l < rank.hiddenDim; ++l) {
-            auto x1 = outExpertHost[(offset + token) * rank.hiddenDim + l];
-            auto x2 = rankTestData[dp].x[t * rank.hiddenDim + l];
-            if (!failed && x1 != x2) {
-              std::cerr << "Token mismatch at " << expert << " " << dp << " " << token << std::endl;
-              failed = true;
-              continue;
-            }
+          std::vector<float> token;
+          for (unsigned l = 0; l < rank.hiddenDim; ++l) {
+            token.push_back((float)rankData.x[t * rank.hiddenDim + l]);
           }
-          for (size_t l = 0; l < rank.hiddenDimScale; ++l) {
-            auto x1 = outExpertScaleHost[(offsetScale + token) * rank.hiddenDimScale + l];
-            auto x2 = rankTestData[dp].xScale[t * rank.hiddenDimScale + l];
-            if (!failed && x1 != x2) {
-              std::cerr << "Scale mismatch at " << expert << " " << dp << " " << token << std::endl;
-              failed = true;
-              continue;
-            }
+          std::vector<float> scale;
+          for (unsigned l = 0; l < rank.hiddenDimScale; ++l) {
+            scale.push_back((float)rankData.xScale[t * rank.hiddenDimScale + l]);
           }
 
-          ++token;
+          if (tokenSet.count({token, scale}) == 0) {
+            if (!failed) {
+              std::cerr << "Token mismatch at " << expert << " " << dp << " " << t << std::endl;
+            }
+            failed = true;
+            continue;
+          }
         }
       }
     }
@@ -276,10 +316,11 @@ bool testDispatchCombine(
           const float w = dpRankData.weights[j * expertsPerToken + k];
           sum += w * (float)dpRankData.x[j * hiddenDim + l];
         }
-
-        if (abs(x - sum) > 5e1 - 1) {
-          std::cerr << "Result mismatch at " << dpRank << " " << j << " " << l << ": " << x
-                    << "!=" << sum << std::endl;
+        if (abs(x - sum) > 5e-1) {
+          if (!failed) {
+            std::cerr << "Result mismatch at " << dpRank << " " << j << " " << l << ": " << x
+                      << "!=" << sum << std::endl;
+          }
           failed = true;
           continue;
         }
@@ -322,21 +363,24 @@ int main(int argc, char **argv) {
 
   // Run the tests.
   int exit_code = EXIT_SUCCESS;
-  if (!testDispatchCombine<float, nv_bfloat16, AllToAllInterNode>(
-          stream, rank / 2, 2, rank, world_size
+
+  // Inter-node tests.
+  if (!testDispatchCombine<float, AllToAllInterNode>(stream, rank / 2, 2, rank, world_size)) {
+    exit_code = EXIT_FAILURE;
+  }
+  if (!testDispatchCombine<nv_bfloat16, AllToAllInterNode>(stream, rank / 2, 2, rank, world_size)) {
+    exit_code = EXIT_FAILURE;
+  }
+
+  // Intra-node tests.
+  std::shared_ptr<Distributed> distributed = std::make_shared<DistributedNVSHMEM>(rank, world_size);
+  if (!testDispatchCombine<float, AllToAllIntraNode>(
+          stream, rank / 2, 2, rank, world_size, distributed
       )) {
     exit_code = EXIT_FAILURE;
   }
-  if (!testDispatchCombine<nv_bfloat16, nv_bfloat16, AllToAllInterNode>(
-          stream, rank / 2, 2, rank, world_size
-      )) {
-    exit_code = EXIT_FAILURE;
-  }
-  if (!testDispatchCombine<float, half, AllToAllInterNode>(stream, rank / 2, 2, rank, world_size)) {
-    exit_code = EXIT_FAILURE;
-  }
-  if (!testDispatchCombine<nv_bfloat16, half, AllToAllInterNode>(
-          stream, rank / 2, 2, rank, world_size
+  if (!testDispatchCombine<nv_bfloat16, AllToAllIntraNode>(
+          stream, rank / 2, 2, rank, world_size, distributed
       )) {
     exit_code = EXIT_FAILURE;
   }

@@ -4,7 +4,7 @@ import logging
 import pytest
 import torch
 
-from pplx_kernels import AllToAll
+from pplx_kernels.all_to_all import AllToAll
 from pplx_kernels.nvshmem import (
     nvshmem_alloc_empty_unique_id,
     nvshmem_finalize,
@@ -49,6 +49,7 @@ def _do_test_all_to_all(
     pgi: ProcessGroupInfo,
     dp_size: int,
     moe: MoEConfig,
+    internode: bool,
 ) -> None:
     rank = pgi.rank
     local_rank = pgi.local_rank
@@ -58,25 +59,47 @@ def _do_test_all_to_all(
     assert torch.cuda.current_device() == local_rank
     device = pgi.device
 
-    ata = AllToAll(
-        max_num_tokens=moe.max_num_tokens,
-        num_experts=moe.num_experts,
-        experts_per_token=moe.experts_per_token,
-        rank=rank,
-        world_size=world_size,
-        dp_size=dp_size,
-        hidden_dim=moe.hidden_dim,
-        hidden_dim_bytes=moe.hidden_dim * moe.in_dtype.itemsize,
-        hidden_dim_scale_bytes=(
-            0
-            if moe.in_dtype.itemsize != 1
-            else (
-                (moe.hidden_dim + moe.block_size - 1)
-                // moe.block_size
-                * torch.float32.itemsize
-            )
-        ),
-    )
+    ata: AllToAll
+    if internode:
+        ata = AllToAll.internode(
+            max_num_tokens=moe.max_num_tokens,
+            num_experts=moe.num_experts,
+            experts_per_token=moe.experts_per_token,
+            rank=rank,
+            world_size=world_size,
+            dp_size=dp_size,
+            hidden_dim=moe.hidden_dim,
+            hidden_dim_bytes=moe.hidden_dim * moe.in_dtype.itemsize,
+            hidden_dim_scale_bytes=(
+                0
+                if moe.in_dtype.itemsize != 1
+                else (
+                    (moe.hidden_dim + moe.block_size - 1)
+                    // moe.block_size
+                    * torch.float32.itemsize
+                )
+            ),
+        )
+    else:
+        ata = AllToAll.intranode(
+            max_num_tokens=moe.max_num_tokens,
+            num_experts=moe.num_experts,
+            experts_per_token=moe.experts_per_token,
+            rank=rank,
+            world_size=world_size,
+            dp_size=dp_size,
+            hidden_dim=moe.hidden_dim,
+            hidden_dim_bytes=moe.hidden_dim * moe.in_dtype.itemsize,
+            hidden_dim_scale_bytes=(
+                0
+                if moe.in_dtype.itemsize != 1
+                else (
+                    (moe.hidden_dim + moe.block_size - 1)
+                    // moe.block_size
+                    * torch.float32.itemsize
+                )
+            ),
+        )
 
     # Generate the same test data on all ranks
     rng = torch.Generator()
@@ -181,6 +204,10 @@ def _do_test_all_to_all(
             )
             assert cnt_tokens == len(expert_token_from[expert_idx])
             cnt_from_dp_rank = [0] * num_dp
+            src_tokens = set()
+            src_scales = set()
+            dst_tokens = set()
+            dst_scales = set()
             for i_token in range(cnt_tokens):
                 src_dp_rank, src_token_idx = expert_token_from[expert_idx][i_token]
                 cnt_from_dp_rank[src_dp_rank] += 1
@@ -194,7 +221,8 @@ def _do_test_all_to_all(
                     src_token_idx,
                     _str_1d_tensor(dst_x.cpu()),
                 )
-                torch.testing.assert_close(dst_x, src_x.to(device), rtol=0, atol=0)
+                dst_tokens.add(tuple(dst_x.cpu().tolist()))
+                src_tokens.add(tuple(src_x.cpu().tolist()))
 
                 if moe.in_dtype.itemsize == 1:
                     assert expert_x_scale is not None
@@ -206,9 +234,11 @@ def _do_test_all_to_all(
                         i_token,
                         _str_1d_tensor(dst_x_scale.cpu()),
                     )
-                    torch.testing.assert_close(
-                        dst_x_scale, src_x_scale.to(device), rtol=0, atol=0
-                    )
+                    src_scales.add(tuple(src_x_scale.cpu().tolist()))
+                    dst_scales.add(tuple(dst_x_scale.cpu().tolist()))
+
+            assert src_scales == dst_scales
+            assert src_tokens == dst_tokens
 
     # Pretend to do some computation
     val = 1.5
@@ -254,6 +284,7 @@ def _worker_test_all_to_all(
     in_dtype: str,
     out_dtype: str,
     moe_config: MoEConfig,
+    internode: bool,
 ) -> None:
     uid = nvshmem_get_unique_id() if pgi.rank == 0 else nvshmem_alloc_empty_unique_id()
     torch.distributed.broadcast(uid, src=0)
@@ -264,7 +295,7 @@ def _worker_test_all_to_all(
         in_dtype=getattr(torch, in_dtype),
         out_dtype=getattr(torch, out_dtype),
     )
-    _do_test_all_to_all(pgi, dp_size, moe_config)
+    _do_test_all_to_all(pgi, dp_size, moe_config, internode)
 
     nvshmem_finalize()
 
@@ -272,19 +303,35 @@ def _worker_test_all_to_all(
 @pytest.mark.skipif(torch.cuda.device_count() < 4, reason="Requires at least 4 GPUs")
 @pytest.mark.parametrize("in_dtype", ["bfloat16", "float8_e4m3fn", "float16"])
 @pytest.mark.parametrize("out_dtype", ["float16", "bfloat16"])
-def test_all_to_all_4_gpu(in_dtype: str, out_dtype: str) -> None:
+@pytest.mark.parametrize("internode", [True, False])
+def test_all_to_all_4_gpu(in_dtype: str, out_dtype: str, internode: bool) -> None:
     world_size = 4
     dp_size = 2
     parallel_launch(
-        world_size, _worker_test_all_to_all, dp_size, in_dtype, out_dtype, small_moe
+        world_size,
+        _worker_test_all_to_all,
+        dp_size,
+        in_dtype,
+        out_dtype,
+        small_moe,
+        internode,
     )
 
 
 def _worker_test_all_to_all_multi_node(
-    pgi: ProcessGroupInfo, in_dtype: str, out_dtype: str
+    pgi: ProcessGroupInfo,
+    in_dtype: str,
+    out_dtype: str,
 ) -> None:
     dp_size = 4
-    _worker_test_all_to_all(pgi, dp_size, in_dtype, out_dtype, medium_moe)
+    _worker_test_all_to_all(
+        pgi,
+        dp_size,
+        in_dtype,
+        out_dtype,
+        medium_moe,
+        True,
+    )
 
 
 @require_multi_node

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.22)
 project(PPLXKernels
         VERSION 0.0.1
         DESCRIPTION "PPLX Kernels"
@@ -52,6 +52,7 @@ endfunction()
 
 # === Library targets ===
 add_subdirectory(all_to_all)
+add_subdirectory(core)
 
 # Main shared library
 add_library(pplx_kernels SHARED
@@ -60,13 +61,14 @@ add_library(pplx_kernels SHARED
     bindings/nvshmem.cpp
 )
 target_link_libraries(pplx_kernels PUBLIC
-    all_to_all_lib
+    all_to_all_internode_lib
+    all_to_all_intranode_lib
+    core_lib
     torch::py_limited
     Python::Module
     CUDA::cuda_driver
     CUDA::cudart
     nvshmem::nvshmem_host
-    nvshmem::nvshmem_device
 )
 set_target_properties(pplx_kernels PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../src/pplx_kernels

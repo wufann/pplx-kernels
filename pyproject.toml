@@ -1,3 +1,10 @@
+[tool.poetry]
+authors = ["Perplexity AI"]
+description = ""
+name = "pplx-kernels"
+readme = "README.md"
+version = "0.0.1"
+
 [tool.ruff]
 line-length = 88
 

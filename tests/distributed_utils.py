@@ -49,6 +49,10 @@ def _worker_parallel_launch(
         world_size=world_size,
         device_id=device,
     )
+    world_group = torch.distributed.group.WORLD
+    assert world_group is not None
+    torch._C._distributed_c10d._register_process_group("default", world_group)
+
     barrier = torch.tensor([rank], device=device)
     torch.distributed.all_reduce(barrier)
 

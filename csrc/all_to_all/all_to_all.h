@@ -63,15 +63,6 @@ protected:
   const unsigned worldSize;
   /// The size of a DP group.
   const unsigned dpSize;
-  /// The maximum number of tokens in a batch.
-  const size_t maxBatchTokens;
-
-  /// @section Internal buffers communicating between dispatch and combine.
-  uint32_t *numTokensPerDP = nullptr;
-  uint32_t *sourceIndex = nullptr;
-  uint32_t *sourceExpert = nullptr;
-  uint32_t *sourceOffset = nullptr;
-  uint32_t *sourceGroup = nullptr;
 };
 
 } // namespace pplx
