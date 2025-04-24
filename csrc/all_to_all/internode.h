@@ -29,7 +29,7 @@ public:
 
   ~AllToAllInterNode();
 
-  /// Launches the all-to-all broadcast kernel.
+  /// Launches the all-to-all dispatch kernel.
   ///
   /// @param outTokensPerExpert An output array which contains the number of
   /// tokens routed to the experts. Shape: [numLocalExperts].
@@ -63,9 +63,9 @@ public:
   void dispatch(
       const Strided1D<int32_t> &outTokensPerExpert,
       const Strided2D<std::byte> &expertX,
-      const Strided2D<std::byte> &expertXScale,
+      const Strided3D<float> &expertXScale,
       const Strided1D<std::byte> &dpX,
-      const Strided1D<std::byte> &dpXScale,
+      const Strided2D<float> &dpXScale,
       const Strided2D<uint32_t> &indices,
       unsigned m,
       const unsigned *boundM,
@@ -109,7 +109,19 @@ public:
   );
 
 private:
+  /// The maximum number of tokens in a batch.
+  const size_t maxBatchTokens;
+
+  /// @section Internal buffers communicating between dispatch and combine.
+  uint32_t *sourceIndex = nullptr;
+  uint32_t *sourceExpert = nullptr;
+  uint32_t *sourceOffset = nullptr;
+  uint32_t *sourceGroup = nullptr;
+  uint32_t *sourceToken = nullptr;
+  uint32_t *tokenIndex = nullptr;
+
   /// @section Pre-allocated symmetric shared memory workspace.
+  uint32_t *numTokensPerDP = nullptr;
   uint64_t *numTokensBuffer = nullptr;
   uint64_t *numDispatchRecvBuffer = nullptr;
   uint64_t *combineSignalBuffer = nullptr;

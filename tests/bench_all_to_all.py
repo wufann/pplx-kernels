@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-from pplx_kernels import AllToAll
+from pplx_kernels.all_to_all import AllToAll
 from pplx_kernels.nvshmem import (
     nvshmem_alloc_empty_unique_id,
     nvshmem_alltoall,
@@ -57,7 +57,7 @@ def bench_all_to_all(
         )
     )
 
-    ata = AllToAll(
+    ata = AllToAll.internode(
         max_num_tokens=moe.max_num_tokens,
         num_experts=moe.num_experts,
         experts_per_token=moe.experts_per_token,

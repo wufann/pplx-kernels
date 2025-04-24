@@ -1,24 +1,29 @@
-#include "core/nvshmem_utils.h"
+#include "all_to_all/intranode.cuh"
+#include "core/atomic.cuh"
+#include "core/device_utils.h"
 #include "core/utils.h"
-#include "internode.h"
+#include "intranode.h"
 
-#include <cuda.h>
-#include <nvshmem.h>
+#include <cassert>
+
+#include <cooperative_groups.h>
 #include <nvtx3/nvToolsExt.h>
 
 using namespace pplx;
+
+namespace {
 
 template <typename T, typename U, size_t NUM_WARPS, bool DO_SEND, bool DO_RECV>
 __global__ __launch_bounds__(NUM_WARPS * 32, 1) void combineKernel(
     U *outTokens,
     size_t outTokensStrideElem,
-    const uint32_t *indices,
+    uint32_t *indices,
     size_t indicesStrideElem,
     size_t indicesStrideRow,
-    const float *weights,
+    float *weights,
     size_t weightsStrideElem,
     size_t weightsStrideRow,
-    const T *expertX,
+    T *expertX,
     size_t expertXStrideElem,
     size_t expertXStrideRow,
     size_t expertsPerToken,
@@ -30,82 +35,95 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void combineKernel(
     size_t hiddenDim,
     unsigned *boundM,
     unsigned m,
-    uint32_t *sourceExpert,
+    std::byte **sendBuffersPtr,
+    std::byte **recvBuffersPtr,
+    const uint32_t *sourceExpert,
     const uint32_t *sourceIndex,
     const uint32_t *sourceOffset,
-    const uint32_t *sourceGroup,
-    uint64_t *combineSignalBuffer,
-    uint64_t *combineSyncBuffer,
-    uint32_t &globalTokenIndex,
-    std::byte *xBufferIn,
-    std::byte *xBufferOut
+    const uint32_t *sourceRank,
+    uint32_t &globalTokenIndex
 ) {
   const unsigned numLocalExperts = numExperts / worldSize;
-  const size_t stride = hiddenDim * sizeof(T);
+  const size_t tokenDim = hiddenDim * sizeof(T);
+  const size_t tokenStride = device::round_up<size_t>(tokenDim, sizeof(int4));
   constexpr unsigned WARP_SIZE = 32;
   uint32_t warpId = threadIdx.x / WARP_SIZE;
+  const unsigned laneId = threadIdx.x % WARP_SIZE;
+
+  BufferWrapper remoteBuffer(recvBuffersPtr, numLocalExperts, worldSize, maxNumTokens, tokenStride);
+  BufferWrapper localBuffer(sendBuffersPtr, numLocalExperts, worldSize, maxNumTokens, tokenStride);
 
   if (DO_SEND) {
-    const size_t numSendTokens = __ldg(&globalTokenIndex);
+    size_t numSendTokens = globalTokenIndex;
+
     for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < worldSize;
-         i += gridDim.x * blockDim.x) {
-      nvshmemx_signal_op(&combineSyncBuffer[rank], 1, NVSHMEM_SIGNAL_SET, i);
+         i += blockDim.x * gridDim.x) {
+      while (ld_flag_volatile(&localBuffer.getDispatchSyncPtr(i)) != 0)
+        ;
+      st_flag_volatile(&remoteBuffer.getCombineSyncPtr(i), 1);
     }
 
     // Dispatch the tokens from the expert to the DP groups.
     for (uint32_t token = blockIdx.x; token < numSendTokens; token += gridDim.x) {
       const uint32_t expert = __ldg(&sourceExpert[token]);
+      const uint32_t index = __ldg(&sourceIndex[token]);
       const uint32_t offset = __ldg(&sourceOffset[token]);
+      const uint32_t rank = __ldg(&sourceRank[token]);
 
-      // Copy the token to symmetric memory for send.
-      std::byte *xTokenPtr = xBufferIn + token * stride;
-      {
-        const T *expertXTokenPtr = expertX + expert * expertXStrideRow + offset * expertXStrideElem;
+      const uint32_t dstLocalExpert = expert % numLocalExperts;
 
-        int4 *dstPtr = (int4 *)xTokenPtr;
-        const int4 *srcPtr = (const int4 *)expertXTokenPtr;
-        dstPtr += threadIdx.x;
-        srcPtr += threadIdx.x;
+      const T *source = expertX + expert * expertXStrideRow + offset * expertXStrideElem;
+      const unsigned n = tokenDim / sizeof(float4);
 
-        const unsigned n = stride / sizeof(int4);
+      auto copy = [&](unsigned rank, unsigned start, unsigned step) {
+        std::byte *buffer = remoteBuffer.getTokenPtr(rank, dstLocalExpert, index);
+        float4 *srcPtr = (float4 *)source;
+        float4 *dstPtr = (float4 *)buffer;
+
+        srcPtr += start;
+        dstPtr += start;
+
 #pragma unroll(4)
-        for (unsigned j = threadIdx.x; j < n; j += blockDim.x) {
-          *dstPtr = __ldg(srcPtr);
-          dstPtr += blockDim.x;
-          srcPtr += blockDim.x;
+        for (unsigned j = start; j < n; j += step) {
+          *dstPtr = *srcPtr;
+          dstPtr += step;
+          srcPtr += step;
         }
-        __syncthreads();
-      }
+      };
 
-      const uint32_t dstExpert = rank * numLocalExperts + expert;
-
-      const uint32_t source = __ldg(&sourceIndex[token]);
-      const uint32_t dp = __ldg(&sourceGroup[token]);
-      for (unsigned i = warpId; i < dpSize; i += NUM_WARPS) {
-        const int dstRank = dp * dpSize + i;
-        const unsigned index = dstExpert * maxNumTokens + source;
-        std::byte *dstPtr = xBufferOut + index * stride;
-        nvshmemx_putmem_signal_nbi_warp(
-            dstPtr, xTokenPtr, stride, &combineSignalBuffer[source], 1, NVSHMEM_SIGNAL_ADD, dstRank
-        );
+      if (dpSize == 1) {
+        copy(rank, threadIdx.x, blockDim.x);
+      } else {
+        for (unsigned i = warpId; i < dpSize; i += NUM_WARPS) {
+          copy((rank / dpSize) * dpSize + i, laneId, WARP_SIZE);
+        }
       }
+    }
+
+    cooperative_groups::this_grid().sync();
+
+    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < worldSize;
+         i += blockDim.x * gridDim.x) {
+      st_flag_release(&remoteBuffer.getCountPtr(i, 0), 1);
     }
   }
 
   // Synchronize the grid to ensure that tokens routed within the rank are
   // correctly transported from one block to another.
   if (DO_RECV) {
-    if (DO_SEND) {
-      cooperative_groups::this_grid().sync();
+    for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < worldSize;
+         i += blockDim.x * gridDim.x) {
+      while (ld_flag_acquire(&localBuffer.getCountPtr(i, 0)) == 0)
+        ;
+      st_flag_volatile(&localBuffer.getCountPtr(i, 0), 0);
     }
 
-    // Compute the weighed sum of the input tokens.
-    const size_t localNumTokens = boundM ? __ldg(boundM) : m;
-    for (unsigned i = blockIdx.x; i < localNumTokens; i += gridDim.x) {
-      nvshmem_uint64_wait_until(&combineSignalBuffer[i], NVSHMEM_CMP_EQ, expertsPerToken);
-      __syncthreads();
-      combineSignalBuffer[i] = 0;
+    cooperative_groups::this_grid().sync();
+    globalTokenIndex = 0;
 
+    // Compute the weighed sum of the input tokens.
+    const size_t numRecvTokens = boundM ? __ldg(boundM) : m;
+    for (unsigned i = blockIdx.x; i < numRecvTokens; i += gridDim.x) {
       U *dstPtr = outTokens + i * outTokensStrideElem;
       constexpr unsigned VEC_SIZE = 8;
       for (unsigned j = threadIdx.x * VEC_SIZE; j < hiddenDim; j += blockDim.x * VEC_SIZE) {
@@ -117,13 +135,15 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void combineKernel(
         }
 
         for (unsigned k = 0; k < expertsPerToken; ++k) {
-          const uint32_t expert = __ldg(&indices[i * expertsPerToken + k]);
-          const float weight = __ldg(&weights[i * weightsStrideRow + k]);
+          const uint32_t expert = indices[i * expertsPerToken + k];
+          const uint32_t dstRank = expert / numLocalExperts;
+          const uint32_t dstLocalExpert = expert % numLocalExperts;
+          const float weight = weights[i * weightsStrideRow + k];
 
 #pragma unroll
           for (unsigned l = 0; l < VEC_SIZE; ++l) {
-            std::byte *xDstPtr = xBufferOut + (expert * maxNumTokens + i) * stride;
-            sum[l] += weight * (float)((T *)xDstPtr)[j + l];
+            std::byte *buffer = localBuffer.getTokenPtr(dstRank, dstLocalExpert, i);
+            sum[l] += weight * (float)((T *)buffer)[j + l];
           }
         }
 
@@ -135,19 +155,15 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void combineKernel(
     }
 
     for (unsigned i = blockIdx.x * blockDim.x + threadIdx.x; i < worldSize;
-         i += gridDim.x * blockDim.x) {
-      nvshmem_uint64_wait_until(&combineSyncBuffer[i], NVSHMEM_CMP_EQ, 1);
-      combineSyncBuffer[i] = 0;
-    }
-
-    if (blockIdx.x == 0 && threadIdx.x == 0) {
-      globalTokenIndex = 0;
+         i += blockDim.x * gridDim.x) {
+      st_flag_volatile(&remoteBuffer.getCombineSyncPtr(i), 0);
     }
   }
 }
+} // namespace
 
 template <typename T, typename U>
-void AllToAllInterNode::combine(
+void AllToAllIntraNode::combine(
     const Strided1D<U> &outTokens,
     const Strided2D<uint32_t> &indices,
     const Strided2D<float> &weights,
@@ -157,7 +173,7 @@ void AllToAllInterNode::combine(
     SplitMode splitMode,
     cudaStream_t stream
 ) {
-  constexpr size_t NUM_WARPS = 16;
+  constexpr size_t NUM_WARPS = 32;
 
   const size_t numLocalExperts = numExperts / worldSize;
   const size_t numDPGroups = worldSize / dpSize;
@@ -190,15 +206,14 @@ void AllToAllInterNode::combine(
       const_cast<size_t *>(&hiddenDim),
       const_cast<unsigned **>(&boundM),
       &m,
+      &sendBuffersPtr,
+      &recvBuffersPtr,
       &sourceExpert,
       &sourceIndex,
       &sourceOffset,
-      &sourceGroup,
-      &combineSignalBuffer,
-      &combineSyncBuffer,
+      &sourceRank,
       &tokenIndex,
-      &xCombineIn,
-      &xCombineOut};
+  };
 
   nvtxRangePush("combine");
   switch (splitMode) {
@@ -224,7 +239,7 @@ void AllToAllInterNode::combine(
 }
 
 #define INSTANTIATE_COMBINE(T, U)                                                                  \
-  template void AllToAllInterNode::combine<T, U>(                                                  \
+  template void AllToAllIntraNode::combine<T, U>(                                                  \
       const Strided1D<U> &outTokens,                                                               \
       const Strided2D<uint32_t> &indices,                                                          \
       const Strided2D<float> &weights,                                                             \
@@ -237,7 +252,7 @@ void AllToAllInterNode::combine(
 
 INSTANTIATE_COMBINE(float, nv_bfloat16)
 INSTANTIATE_COMBINE(float, half)
-INSTANTIATE_COMBINE(nv_bfloat16, nv_bfloat16)
-INSTANTIATE_COMBINE(nv_bfloat16, half)
 INSTANTIATE_COMBINE(half, nv_bfloat16)
 INSTANTIATE_COMBINE(half, half)
+INSTANTIATE_COMBINE(nv_bfloat16, nv_bfloat16)
+INSTANTIATE_COMBINE(nv_bfloat16, half)

@@ -1,5 +1,7 @@
 # pyright: reportCallIssue=false
 
+from typing import Any, Callable
+
 import torch
 
 from .ops import _ops
@@ -8,36 +10,15 @@ from .ops import _ops
 class AllToAll:
     def __init__(
         self,
-        max_num_tokens: int,
-        num_experts: int,
-        experts_per_token: int,
-        rank: int,
-        world_size: int,
-        dp_size: int,
-        hidden_dim: int,
-        hidden_dim_bytes: int,
-        hidden_dim_scale_bytes: int,
+        ptr: Any,
+        combine_fn: Callable,
+        dispatch_fn: Callable,
+        has_scales: bool,
     ) -> None:
-        assert world_size % dp_size == 0
-        assert world_size // dp_size > 1
-
-        self.world_size = world_size
-        self.dp_size = dp_size
-        self.max_num_tokens = max_num_tokens
-        self._has_scales = hidden_dim_scale_bytes > 0
-
-        self._ptr = _ops.all_to_all_create(
-            max_num_tokens,
-            num_experts,
-            experts_per_token,
-            rank,
-            world_size,
-            dp_size,
-            hidden_dim,
-            hidden_dim_bytes,
-            hidden_dim_scale_bytes,
-        )
-        assert self._ptr != 0
+        self._ptr = ptr
+        self._combine_fn = combine_fn
+        self._dispatch_fn = dispatch_fn
+        self._has_scales = has_scales
 
     def __del__(self) -> None:
         self.destroy()
@@ -63,7 +44,7 @@ class AllToAll:
             assert out_expert_x_scale is None
             assert dp_x_scale is None
 
-        _ops.all_to_all_dispatch(
+        self._dispatch_fn(
             self._ptr,
             out_expert_num_tokens,
             out_expert_x,
@@ -87,7 +68,7 @@ class AllToAll:
         do_recv: bool = True,
     ) -> None:
         assert self._ptr is not None
-        _ops.all_to_all_combine(
+        self._combine_fn(
             self._ptr,
             out_tokens,
             indices,
@@ -102,3 +83,81 @@ class AllToAll:
         if self._ptr is not None:
             _ops.all_to_all_destroy(self._ptr)
             self._ptr = None
+
+    @classmethod
+    def intranode(
+        cls,
+        max_num_tokens: int,
+        num_experts: int,
+        experts_per_token: int,
+        rank: int,
+        world_size: int,
+        dp_size: int,
+        hidden_dim: int,
+        hidden_dim_bytes: int,
+        hidden_dim_scale_bytes: int,
+        group_name: str = "default",
+    ) -> "AllToAll":
+        assert world_size % dp_size == 0
+        assert world_size // dp_size > 1
+
+        has_scales = hidden_dim_scale_bytes > 0
+
+        ptr = _ops.all_to_all_intranode_create(
+            max_num_tokens,
+            num_experts,
+            experts_per_token,
+            rank,
+            world_size,
+            dp_size,
+            hidden_dim,
+            hidden_dim_bytes,
+            hidden_dim_scale_bytes,
+            group_name,
+        )
+        assert ptr != 0
+
+        return cls(
+            ptr,
+            _ops.all_to_all_intranode_combine,
+            _ops.all_to_all_intranode_dispatch,
+            has_scales,
+        )
+
+    @classmethod
+    def internode(
+        cls,
+        max_num_tokens: int,
+        num_experts: int,
+        experts_per_token: int,
+        rank: int,
+        world_size: int,
+        dp_size: int,
+        hidden_dim: int,
+        hidden_dim_bytes: int,
+        hidden_dim_scale_bytes: int,
+    ) -> "AllToAll":
+        assert world_size % dp_size == 0
+        assert world_size // dp_size > 1
+
+        has_scales = hidden_dim_scale_bytes > 0
+
+        ptr = _ops.all_to_all_internode_create(
+            max_num_tokens,
+            num_experts,
+            experts_per_token,
+            rank,
+            world_size,
+            dp_size,
+            hidden_dim,
+            hidden_dim_bytes,
+            hidden_dim_scale_bytes,
+        )
+        assert ptr != 0
+
+        return cls(
+            ptr,
+            _ops.all_to_all_internode_combine,
+            _ops.all_to_all_internode_dispatch,
+            has_scales,
+        )

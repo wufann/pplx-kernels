@@ -12,3 +12,12 @@
       exit(EXIT_FAILURE);                                                                          \
     }                                                                                              \
   } while (0)
+
+namespace pplx {
+template <typename T> T *mallocZeroBuffer(size_t size) {
+  T *ptr;
+  CUDACHECK(cudaMalloc(&ptr, size * sizeof(T)));
+  cudaMemset(ptr, 0, size * sizeof(T));
+  return ptr;
+}
+} // namespace pplx

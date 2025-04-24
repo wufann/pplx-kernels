@@ -10,6 +10,8 @@
 #include <random>
 #include <vector>
 
+#include <cuda_fp8.h>
+
 namespace pplx {
 
 /// Test data for all-to-all dispatch/combine.
@@ -90,7 +92,11 @@ RankTestData<T>::RankTestData(
     std::uniform_real_distribution<> value(-10.0f, 10.0f);
     for (size_t i = 0; i < m; ++i) {
       for (size_t j = 0; j < hiddenDim; ++j) {
-        x[i * hiddenDim + j] = value(gen);
+        if constexpr (std::is_same<T, __nv_fp8_e4m3>::value) {
+          x[i * hiddenDim + j] = __nv_cvt_float_to_fp8(value(gen), __NV_SATFINITE, __NV_E4M3);
+        } else {
+          x[i * hiddenDim + j] = value(gen);
+        }
       }
     }
   }

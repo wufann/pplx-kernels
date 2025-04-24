@@ -1,17 +1,32 @@
 # All-to-All library
 
-add_library(all_to_all_lib STATIC
+add_library(all_to_all_common STATIC
     all_to_all.cpp
-    internode_dispatch.cu
-    internode_combine.cu
-    internode.cpp
 )
-target_link_libraries(all_to_all_lib PUBLIC
-    nvshmem::nvshmem_host
-    nvshmem::nvshmem_device
+
+add_library(all_to_all_intranode_lib STATIC
+    intranode_combine.cu
+    intranode_dispatch.cu
+    intranode.cpp
+)
+target_link_libraries(all_to_all_intranode_lib PUBLIC
+    all_to_all_common
+    nvshmem::nvshmem
     CUDA::cudart
 )
-set_cuda_compile_options(all_to_all_lib)
+set_cuda_compile_options(all_to_all_intranode_lib)
+
+add_library(all_to_all_internode_lib STATIC
+    internode_combine.cu
+    internode_dispatch.cu
+    internode.cpp
+)
+target_link_libraries(all_to_all_internode_lib PUBLIC
+    all_to_all_common
+    nvshmem::nvshmem
+    CUDA::cudart
+)
+set_cuda_compile_options(all_to_all_internode_lib)
 
 if(WITH_TESTS)
     # All-to-All test
@@ -19,12 +34,13 @@ if(WITH_TESTS)
         test_all_to_all.cpp
     )
     target_link_libraries(test_all_to_all PUBLIC
-        all_to_all_lib
+        all_to_all_intranode_lib
+        all_to_all_internode_lib
+        core_lib
         CUDA::cudart
         CUDA::cuda_driver
         MPI::MPI_CXX
-        nvshmem::nvshmem_host
-        nvshmem::nvshmem_device
+        nvshmem::nvshmem
     )
     set_cuda_compile_options(test_all_to_all)
     add_test(NAME AllToAllTest
@@ -37,11 +53,12 @@ if (WITH_BENCHMARKS)
         bench_all_to_all.cpp
     )
     target_link_libraries(bench_all_to_all PUBLIC
-        all_to_all_lib
+        all_to_all_intranode_lib
+        all_to_all_internode_lib
+        core_lib
         CUDA::cudart
         CUDA::cuda_driver
         MPI::MPI_CXX
-        nvshmem::nvshmem_host
-        nvshmem::nvshmem_device
+        nvshmem::nvshmem
     )
 endif()
