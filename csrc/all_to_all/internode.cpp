@@ -1,5 +1,6 @@
 
-#include <nvshmem.h>
+// #include <nvshmem.h>
+#include <rocshmem.h>
 
 #include <cassert>
 #include <cstdint>

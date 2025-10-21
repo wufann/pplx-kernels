@@ -4,23 +4,38 @@ add_library(all_to_all_common STATIC
     all_to_all.cpp
 )
 
-target_link_libraries(all_to_all_common PUBLIC
-    CUDA::cudart
-)
+if(WITH_ROCM)
+    target_link_libraries(all_to_all_common PUBLIC
+        hip::host
+    )
+else()
+    target_link_libraries(all_to_all_common PUBLIC
+        CUDA::cudart
+    )
+endif()
 
 add_library(all_to_all_intranode_lib STATIC
     intranode_combine.cu
     intranode_dispatch.cu
     intranode.cpp
 )
-target_link_libraries(all_to_all_intranode_lib PUBLIC
-    all_to_all_common
-    CUDA::cudart
-)
-target_link_libraries(all_to_all_intranode_lib INTERFACE
-    nvshmem::nvshmem_host
-)
-target_include_directories(all_to_all_intranode_lib PRIVATE ${NVSHMEM_INCLUDE_DIR})
+
+if(WITH_ROCM)
+    target_link_libraries(all_to_all_intranode_lib PUBLIC
+        all_to_all_common
+        hip::host
+    )
+else()
+    target_link_libraries(all_to_all_intranode_lib PUBLIC
+        all_to_all_common
+        CUDA::cudart
+    )
+    target_link_libraries(all_to_all_intranode_lib INTERFACE
+        nvshmem::nvshmem_host
+    )
+    target_include_directories(all_to_all_intranode_lib PRIVATE ${NVSHMEM_INCLUDE_DIR})
+endif()
+
 set_cuda_compile_options(all_to_all_intranode_lib)
 
 add_library(all_to_all_internode_lib STATIC
@@ -28,14 +43,23 @@ add_library(all_to_all_internode_lib STATIC
     internode_dispatch.cu
     internode.cpp
 )
-target_link_libraries(all_to_all_internode_lib PUBLIC
-    all_to_all_common
-    CUDA::cudart
-)
-target_link_libraries(all_to_all_internode_lib INTERFACE
-    nvshmem::nvshmem_host
-)
-target_include_directories(all_to_all_internode_lib PRIVATE ${NVSHMEM_INCLUDE_DIR})
+
+if(WITH_ROCM)
+    target_link_libraries(all_to_all_internode_lib PUBLIC
+        all_to_all_common
+        hip::host
+    )
+else()
+    target_link_libraries(all_to_all_internode_lib PUBLIC
+        all_to_all_common
+        CUDA::cudart
+    )
+    target_link_libraries(all_to_all_internode_lib INTERFACE
+        nvshmem::nvshmem_host
+    )
+    target_include_directories(all_to_all_internode_lib PRIVATE ${NVSHMEM_INCLUDE_DIR})
+endif()
+
 set_cuda_compile_options(all_to_all_internode_lib)
 
 if(WITH_TESTS)

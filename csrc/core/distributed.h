@@ -1,6 +1,7 @@
 #pragma once
 
-#include <nvshmem.h>
+// #include <nvshmem.h>
+#include <rocshmem.h>
 
 #include <vector>
 

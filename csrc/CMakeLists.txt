@@ -1,27 +1,56 @@
 cmake_minimum_required(VERSION 3.22)
-project(PPLXKernels
-        VERSION 0.0.1
-        DESCRIPTION "PPLX Kernels"
-        LANGUAGES CXX CUDA)
 
 # === Configuration options ===
 option(WITH_TESTS "Build tests" OFF)
 option(WITH_BENCHMARKS "Build benchmarks" OFF)
-set(CMAKE_CUDA_ARCHITECTURES 90a CACHE STRING "CUDA architecture to target")
+option(WITH_ROCM "Build with ROCm" OFF)
+
+# 根据构建类型设置语言和项目配置
+if(WITH_ROCM)
+    project(PPLXKernels
+            VERSION 0.0.1
+            DESCRIPTION "PPLX Kernels"
+            LANGUAGES CXX)
+    set(CMAKE_HIP_ARCHITECTURES "gfx950" CACHE STRING "HIP architecture to target")
+    if(DEFINED PYTORCH_ROCM_ARCH)
+        set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})
+    endif()
+else()
+    project(PPLXKernels
+            VERSION 0.0.1
+            DESCRIPTION "PPLX Kernels"
+            LANGUAGES CXX CUDA)
+    set(CMAKE_CUDA_ARCHITECTURES 90a CACHE STRING "CUDA architecture to target")
+endif()
 
 # === CMake configuration ===
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+if(NOT WITH_ROCM)
+    set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
+endif()
+
 # === Dependencies ===
 include(FetchContent)
-find_package(CUDAToolkit REQUIRED)  # Modern replacement for find_package(CUDA)
+
+# 根据构建类型查找不同的依赖
+if(WITH_ROCM)
+    find_package(hip REQUIRED)
+    find_package(ROCM REQUIRED)
+else()
+    find_package(CUDAToolkit REQUIRED)  # Modern replacement for find_package(CUDA)
+endif()
+
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(Torch REQUIRED)
-find_package(NVSHMEM REQUIRED)
+
+# NVSHMEM目前只支持CUDA，ROCm构建需要跳过或使用替代方案
+if(NOT WITH_ROCM)
+    find_package(NVSHMEM REQUIRED)
+endif()
 
 if(WITH_TESTS)
     enable_testing()
@@ -36,7 +65,11 @@ add_library(torch::py_limited ALIAS torch_imported)
 target_include_directories(torch_imported SYSTEM INTERFACE ${TORCH_INCLUDE_DIRS})
 # NOTE(lequn): We don't link against all ${TORCH_LIBRARIES} because we use py_limited_api.
 # See: https://github.com/pytorch/pytorch/blob/9017becf1d895999a1c819c9d35b8139c090e7a9/torch/utils/cpp_extension.py#L1256-L1270
-target_link_libraries(torch_imported INTERFACE c10 torch torch_cpu c10_cuda torch_cuda CUDA::cudart)
+if(WITH_ROCM)
+    target_link_libraries(torch_imported INTERFACE c10 torch torch_cpu hip::host)
+else()
+    target_link_libraries(torch_imported INTERFACE c10 torch torch_cpu c10_cuda torch_cuda CUDA::cudart)
+endif()
 
 # === Compiler and linker flags ===
 add_compile_options(-Wno-deprecated-declarations)
@@ -44,11 +77,18 @@ add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=1)
 add_compile_definitions(Py_LIMITED_API=0x03090000)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-# CUDA-specific compile options function
-function(set_cuda_compile_options target)
-    target_compile_options(${target} PRIVATE
-        $<$<COMPILE_LANGUAGE:CUDA>:--threads=32 -O3>)
-endfunction()
+# CUDA/HIP-specific compile options function
+if(WITH_ROCM)
+    function(set_cuda_compile_options target)
+        target_compile_options(${target} PRIVATE
+            $<$<COMPILE_LANGUAGE:HIP>:--threads=32 -O3>)
+    endfunction()
+else()
+    function(set_cuda_compile_options target)
+        target_compile_options(${target} PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>:--threads=32 -O3>)
+    endfunction()
+endif()
 
 # === Library targets ===
 add_subdirectory(all_to_all)
@@ -65,12 +105,26 @@ target_link_libraries(pplx_kernels PUBLIC
     core_lib
     torch::py_limited
     Python::Module
-    CUDA::cuda_driver
-    CUDA::cudart
-    nvshmem::nvshmem_host
-    nvshmem::nvshmem_device
 )
+
+# 根据构建类型链接不同的运行时库
+if(WITH_ROCM)
+    target_link_libraries(pplx_kernels PUBLIC hip::host)
+else()
+    target_link_libraries(pplx_kernels PUBLIC
+        CUDA::cuda_driver
+        CUDA::cudart
+        nvshmem::nvshmem_host
+        nvshmem::nvshmem_device
+    )
+endif()
+
 set_target_properties(pplx_kernels PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../src/pplx_kernels
-    CUDA_SEPARABLE_COMPILATION ON
 )
+
+if(NOT WITH_ROCM)
+    set_target_properties(pplx_kernels PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+    )
+endif()

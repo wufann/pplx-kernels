@@ -33,20 +33,38 @@ class CMakeBuild(build_ext):
         build_dir.mkdir(parents=True, exist_ok=True)
         source_dir = root_dir / "csrc"
 
-        subprocess.check_call(
-            [
-                "cmake",
-                "-B",
-                str(build_dir),
-                "-S",
-                str(source_dir),
-                "-G",
-                "Ninja",
-                "-DCMAKE_PREFIX_PATH=" + _get_torch_cmake_prefix_path(),
-                "-DTORCH_CUDA_ARCH_LIST=" + os.environ["TORCH_CUDA_ARCH_LIST"],
-                "-WITH_TESTS=OFF",
-            ]
-        )
+        # 检测是否构建ROCm版本
+        is_rocm_build = "PYTORCH_ROCM_ARCH" in os.environ
+        is_cuda_build = "TORCH_CUDA_ARCH_LIST" in os.environ
+        
+        # 构建CMake参数
+        cmake_args = [
+            "cmake",
+            "-B",
+            str(build_dir),
+            "-S",
+            str(source_dir),
+            "-G",
+            "Ninja",
+            "-DCMAKE_PREFIX_PATH=" + _get_torch_cmake_prefix_path(),
+            "-WITH_TESTS=OFF",
+        ]
+        
+        # 设置构建类型
+        if is_rocm_build:
+            cmake_args.append("-DWITH_ROCM=ON")
+        else:
+            cmake_args.append("-DWITH_ROCM=OFF")
+        
+        # 检查CUDA架构
+        if is_cuda_build:
+            cmake_args.append("-DTORCH_CUDA_ARCH_LIST=" + os.environ["TORCH_CUDA_ARCH_LIST"])
+        
+        # 检查ROCm架构
+        if is_rocm_build:
+            cmake_args.append("-DPYTORCH_ROCM_ARCH=" + os.environ["PYTORCH_ROCM_ARCH"])
+        
+        subprocess.check_call(cmake_args)
         subprocess.check_call(["ninja"], cwd=str(build_dir))
 
 
