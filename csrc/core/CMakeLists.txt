@@ -8,6 +8,7 @@ if(WITH_ROCM)
     target_link_libraries(core_lib PUBLIC
         hip::host
     )
+    target_include_directories(core_lib PRIVATE ${ROCSHMEM_INCLUDE_DIR})
 else()
     add_library(core_lib STATIC
         kernels.cu

@@ -2,7 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cuda_bf16.h>
+#include <hip/hip_bf16.h>
 
 #include "all_to_all/all_to_all.h"
 #include "core/buffer.h"

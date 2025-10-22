@@ -10,8 +10,9 @@ if(WITH_ROCM)
     project(PPLXKernels
             VERSION 0.0.1
             DESCRIPTION "PPLX Kernels"
-            LANGUAGES CXX)
+            LANGUAGES CXX C)
     set(CMAKE_HIP_ARCHITECTURES "gfx950" CACHE STRING "HIP architecture to target")
+    enable_language(HIP)
     if(DEFINED PYTORCH_ROCM_ARCH)
         set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})
     endif()
@@ -31,6 +32,17 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 if(NOT WITH_ROCM)
     set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
+else()
+    set(ROCSHMEM_INCLUDE_DIR /root/rocshmem/include)
+    set(ROCSHMEM_LIB_DIR /root/rocshmem/lib)
+    list(APPEND HIP_CXX_FLAGS -D__HIP_NO_HALF_OPERATORS__=1)
+    # list(APPEND HIP_CXX_FLAGS -D__HIP_NO_HALF_CONVERSIONS__=1)
+    list(APPEND HIP_CXX_FLAGS -D__HIP_NO_BFLOAT16_CONVERSIONS__=1)
+    list(APPEND HIP_CXX_FLAGS -D__HIP_NO_HALF2_OPERATORS__=1)
+    list(APPEND HIP_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    list(APPEND HIP_CXX_FLAGS -mavx2)
+    list(APPEND HIP_CXX_FLAGS -mf16c)
+    list(APPEND HIP_CXX_FLAGS -mfma)
 endif()
 
 # === Dependencies ===
@@ -38,8 +50,13 @@ include(FetchContent)
 
 # 根据构建类型查找不同的依赖
 if(WITH_ROCM)
-    find_package(hip REQUIRED)
-    find_package(ROCM REQUIRED)
+    find_package(HIP REQUIRED)
+    # find_package(ROCM REQUIRED)
+    find_package(ROCSHMEM REQUIRED HINTS /root/rocshmem/lib/cmake/rocshmem)
+    
+    # 为 ROCm 构建添加 MPI 支持
+    set(MPI_DIR /opt/dependencies/ompi)
+    find_package(MPI REQUIRED HINTS ${MPI_DIR})
 else()
     find_package(CUDAToolkit REQUIRED)  # Modern replacement for find_package(CUDA)
 endif()

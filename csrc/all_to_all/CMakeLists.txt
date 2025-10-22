@@ -25,6 +25,7 @@ if(WITH_ROCM)
         all_to_all_common
         hip::host
     )
+    target_include_directories(all_to_all_intranode_lib PRIVATE ${ROCSHMEM_INCLUDE_DIR})
 else()
     target_link_libraries(all_to_all_intranode_lib PUBLIC
         all_to_all_common
@@ -49,6 +50,7 @@ if(WITH_ROCM)
         all_to_all_common
         hip::host
     )
+    target_include_directories(all_to_all_internode_lib PRIVATE ${ROCSHMEM_INCLUDE_DIR})
 else()
     target_link_libraries(all_to_all_internode_lib PUBLIC
         all_to_all_common

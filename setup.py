@@ -47,6 +47,8 @@ class CMakeBuild(build_ext):
             "-G",
             "Ninja",
             "-DCMAKE_PREFIX_PATH=" + _get_torch_cmake_prefix_path(),
+            "-DMPI_DIR=/opt/dependencies/ompi",
+            "-DMPI_C_COMPILER=/opt/dependencies/ompi/bin/mpicc",
             "-WITH_TESTS=OFF",
         ]
         
