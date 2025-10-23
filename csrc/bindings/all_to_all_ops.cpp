@@ -4,8 +4,10 @@
 
 #include <ATen/ATen.h>
 #include <ATen/core/Tensor.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
+// #include <ATen/cuda/CUDAContext.h>
+#include <ATen/hip/HIPContext.h>
+// #include <c10/cuda/CUDAGuard.h>
+#include <c10/hip/HIPGuard.h>
 #include <c10/util/Exception.h>
 #include <torch/csrc/distributed/c10d/GroupRegistry.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
@@ -75,7 +77,7 @@ fptr_t create_internode(
   );
 
   // Needed to use host-side initialization information in device APIs.
-  nvshmem_init();
+  rocshmem::rocshmem_init();
 
   return (fptr_t)ptr;
 }
@@ -164,7 +166,7 @@ void dispatch(
       "indices.size(1) must be equal to the experts per token"
   );
 
-  at::cuda::OptionalCUDAGuard const device_guard(device_of(indices));
+  at::cuda::OptionalHIPGuard const device_guard(device_of(indices));
 
   all_to_all->dispatch(
       Strided1D<int32_t>(
@@ -195,7 +197,7 @@ void dispatch(
       indices.size(0),
       boundM.has_value() ? boundM->data_ptr<unsigned>() : nullptr,
       getSplitMode(doSend, doRecv),
-      at::cuda::getCurrentCUDAStream()
+      at::cuda::getCurrentHIPStream()
   );
 }
 
@@ -235,7 +237,7 @@ void combineImpl(
       indices.size(0),
       boundM.has_value() ? boundM->data_ptr<unsigned>() : nullptr,
       getSplitMode(doSend, doRecv),
-      at::cuda::getCurrentCUDAStream()
+      at::cuda::getCurrentHIPStream()
   );
 }
 
@@ -264,13 +266,13 @@ void combine(
 
   auto *all_to_all = (Kernel *)ptr;
 
-  at::cuda::OptionalCUDAGuard const device_guard(device_of(indices));
+  at::cuda::OptionalHIPGuard const device_guard(device_of(indices));
 
   switch (expertY.scalar_type()) {
   case at::kFloat: {
     switch (outTokens.scalar_type()) {
     case at::kBFloat16:
-      return combineImpl<Kernel, float, nv_bfloat16>(
+      return combineImpl<Kernel, float, hip_bfloat16>(
           all_to_all, outTokens, indices, weights, expertY, boundM, doSend, doRecv
       );
     case at::kHalf:
@@ -284,11 +286,11 @@ void combine(
   case at::kBFloat16: {
     switch (outTokens.scalar_type()) {
     case at::kBFloat16:
-      return combineImpl<Kernel, nv_bfloat16, nv_bfloat16>(
+      return combineImpl<Kernel, hip_bfloat16, hip_bfloat16>(
           all_to_all, outTokens, indices, weights, expertY, boundM, doSend, doRecv
       );
     case at::kHalf:
-      return combineImpl<Kernel, nv_bfloat16, half>(
+      return combineImpl<Kernel, hip_bfloat16, half>(
           all_to_all, outTokens, indices, weights, expertY, boundM, doSend, doRecv
       );
     default:
@@ -298,7 +300,7 @@ void combine(
   case at::kHalf: {
     switch (outTokens.scalar_type()) {
     case at::kBFloat16:
-      return combineImpl<Kernel, half, nv_bfloat16>(
+      return combineImpl<Kernel, half, hip_bfloat16>(
           all_to_all, outTokens, indices, weights, expertY, boundM, doSend, doRecv
       );
     case at::kHalf:

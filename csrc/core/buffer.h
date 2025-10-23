@@ -1,6 +1,6 @@
 #pragma once
 
-// #include <cuda_runtime.h>
+// #include <hip/hip_runtime.h>
 #include <hip/hip_runtime.h>
 #include "core/cuda_utils.h"
 
@@ -14,7 +14,7 @@ template <typename T> class HostBuffer final {
 public:
   HostBuffer(size_t size)
       : size_(size) {
-    CUDACHECK(cudaMallocHost(&data_, size * sizeof(T)));
+    CUDACHECK(hipHostMalloc(&data_, size * sizeof(T)));
   }
 
   HostBuffer(const DeviceBuffer<T> &device_buffer);
@@ -27,7 +27,7 @@ public:
   HostBuffer(const HostBuffer &) = delete;
 
   ~HostBuffer() {
-    cudaFreeHost(data_);
+    hipHostFree(data_);
     data_ = nullptr;
   }
 
@@ -57,7 +57,7 @@ template <typename T> class DeviceBuffer final {
 public:
   DeviceBuffer(size_t size)
       : size_(size) {
-    CUDACHECK(cudaMalloc(&data_, size * sizeof(T)));
+    CUDACHECK(hipMalloc(&data_, size * sizeof(T)));
   }
 
   DeviceBuffer(const HostBuffer<T> &host_buffer);
@@ -65,7 +65,7 @@ public:
   DeviceBuffer(const DeviceBuffer &) = delete;
   DeviceBuffer(DeviceBuffer &&other) = delete;
 
-  ~DeviceBuffer() { cudaFree(data_); }
+  ~DeviceBuffer() { hipFree(data_); }
 
   DeviceBuffer &operator=(const DeviceBuffer &) = delete;
   DeviceBuffer &operator=(DeviceBuffer &&other) = delete;
@@ -79,7 +79,7 @@ public:
   void copyFromHost(const HostBuffer<T> &host_buffer);
 
   void copyFromHost(const T *host_data, size_t num_elements) {
-    CUDACHECK(cudaMemcpy(data_, host_data, num_elements * sizeof(T), cudaMemcpyHostToDevice));
+    CUDACHECK(hipMemcpy(data_, host_data, num_elements * sizeof(T), hipMemcpyHostToDevice));
   }
 
 private:
@@ -90,23 +90,23 @@ private:
 template <typename T>
 HostBuffer<T>::HostBuffer(const DeviceBuffer<T> &device_buffer)
     : size_(device_buffer.size()) {
-  CUDACHECK(cudaMallocHost(&data_, size_ * sizeof(T)));
-  CUDACHECK(cudaMemcpy(data_, device_buffer.get(), size_ * sizeof(T), cudaMemcpyDeviceToHost));
+  CUDACHECK(hipHostMalloc(&data_, size_ * sizeof(T)));
+  CUDACHECK(hipMemcpy(data_, device_buffer.get(), size_ * sizeof(T), hipMemcpyDeviceToHost));
 }
 
 template <typename T>
 DeviceBuffer<T>::DeviceBuffer(const HostBuffer<T> &host_buffer)
     : size_(host_buffer.size()) {
-  CUDACHECK(cudaMalloc(&data_, size_ * sizeof(T)));
-  CUDACHECK(cudaMemcpy(data_, host_buffer.get(), size_ * sizeof(T), cudaMemcpyHostToDevice));
+  CUDACHECK(hipMalloc(&data_, size_ * sizeof(T)));
+  CUDACHECK(hipMemcpy(data_, host_buffer.get(), size_ * sizeof(T), hipMemcpyHostToDevice));
 }
 
 template <typename T> void HostBuffer<T>::copyFromDevice(const DeviceBuffer<T> &device_buffer) {
-  CUDACHECK(cudaMemcpy(data_, device_buffer.get(), size_ * sizeof(T), cudaMemcpyDeviceToHost));
+  CUDACHECK(hipMemcpy(data_, device_buffer.get(), size_ * sizeof(T), hipMemcpyDeviceToHost));
 }
 
 template <typename T> void DeviceBuffer<T>::copyFromHost(const HostBuffer<T> &host_buffer) {
-  CUDACHECK(cudaMemcpy(data_, host_buffer.get(), size_ * sizeof(T), cudaMemcpyHostToDevice));
+  CUDACHECK(hipMemcpy(data_, host_buffer.get(), size_ * sizeof(T), hipMemcpyHostToDevice));
 }
 
 template <typename T> struct Strided1D {

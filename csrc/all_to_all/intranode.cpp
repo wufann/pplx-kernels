@@ -60,19 +60,19 @@ AllToAllIntraNode::AllToAllIntraNode(
   }
 
   // Allocate pointers to the buffer collections.
-  CUDACHECK(cudaMalloc(&sendBuffersPtr, sizeof(std::byte *) * worldSize));
-  CUDACHECK(cudaMalloc(&recvBuffersPtr, sizeof(std::byte *) * worldSize));
+  CUDACHECK(hipMalloc(&sendBuffersPtr, sizeof(std::byte *) * worldSize));
+  CUDACHECK(hipMalloc(&recvBuffersPtr, sizeof(std::byte *) * worldSize));
 
   // On the current rank, allocate a buffer to communicate with every other rank.
   // Synchronize via the distributed group. Create indirect pointer arrays to buffers.
   {
-    std::vector<cudaIpcMemHandle_t> srcHandlesHost;
+    std::vector<hipIpcMemHandle_t> srcHandlesHost;
     for (unsigned i = 0; i < worldSize; i++) {
       auto &ptr = sendBuffers.emplace_back();
       auto &handle = srcHandlesHost.emplace_back();
-      CUDACHECK(cudaMalloc(&ptr, bufferSize));
-      CUDACHECK(cudaMemset(ptr, 0, bufferSize));
-      CUDACHECK(cudaIpcGetMemHandle(&handle, ptr));
+      CUDACHECK(hipMalloc(&ptr, bufferSize));
+      CUDACHECK(hipMemset(ptr, 0, bufferSize));
+      CUDACHECK(hipIpcGetMemHandle(&handle, ptr));
     }
 
     auto dstHandlesHost = distributed->allToAll(srcHandlesHost);
@@ -82,27 +82,27 @@ AllToAllIntraNode::AllToAllIntraNode(
         ptr = sendBuffers[i];
       } else {
         CUDACHECK(
-            cudaIpcOpenMemHandle((void **)&ptr, dstHandlesHost[i], cudaIpcMemLazyEnablePeerAccess)
+            hipIpcOpenMemHandle((void **)&ptr, dstHandlesHost[i], hipIpcMemLazyEnablePeerAccess)
         );
       }
     }
 
-    CUDACHECK(cudaMemcpy(
-        sendBuffersPtr, sendBuffers.data(), sizeof(std::byte *) * worldSize, cudaMemcpyHostToDevice
+    CUDACHECK(hipMemcpy(
+        sendBuffersPtr, sendBuffers.data(), sizeof(std::byte *) * worldSize, hipMemcpyHostToDevice
     ));
 
-    CUDACHECK(cudaMemcpy(
-        recvBuffersPtr, recvBuffers.data(), sizeof(std::byte *) * worldSize, cudaMemcpyHostToDevice
+    CUDACHECK(hipMemcpy(
+        recvBuffersPtr, recvBuffers.data(), sizeof(std::byte *) * worldSize, hipMemcpyHostToDevice
     ));
   }
 
   // Allocate the local buffer for dispatch counts.
-  CUDACHECK(cudaMalloc(&localRecvCountPtr, sizeof(uint32_t) * maxNumTokens));
-  CUDACHECK(cudaMemset(localRecvCountPtr, 0, sizeof(uint32_t) * maxNumTokens));
-  CUDACHECK(cudaMalloc(&countBuffersPtr, sizeof(uint32_t *) * worldSize));
+  CUDACHECK(hipMalloc(&localRecvCountPtr, sizeof(uint32_t) * maxNumTokens));
+  CUDACHECK(hipMemset(localRecvCountPtr, 0, sizeof(uint32_t) * maxNumTokens));
+  CUDACHECK(hipMalloc(&countBuffersPtr, sizeof(uint32_t *) * worldSize));
   {
-    cudaIpcMemHandle_t countHandle;
-    CUDACHECK(cudaIpcGetMemHandle(&countHandle, localRecvCountPtr));
+    hipIpcMemHandle_t countHandle;
+    CUDACHECK(hipIpcGetMemHandle(&countHandle, localRecvCountPtr));
     auto countHandlesHost = distributed->allGather(countHandle);
 
     countBuffers.resize(worldSize);
@@ -110,14 +110,14 @@ AllToAllIntraNode::AllToAllIntraNode(
       if (i == rank) {
         countBuffers[i] = localRecvCountPtr;
       } else {
-        CUDACHECK(cudaIpcOpenMemHandle(
-            (void **)&countBuffers[i], countHandlesHost[i], cudaIpcMemLazyEnablePeerAccess
+        CUDACHECK(hipIpcOpenMemHandle(
+            (void **)&countBuffers[i], countHandlesHost[i], hipIpcMemLazyEnablePeerAccess
         ));
       }
     }
 
-    CUDACHECK(cudaMemcpy(
-        countBuffersPtr, countBuffers.data(), sizeof(uint32_t *) * worldSize, cudaMemcpyHostToDevice
+    CUDACHECK(hipMemcpy(
+        countBuffersPtr, countBuffers.data(), sizeof(uint32_t *) * worldSize, hipMemcpyHostToDevice
     ));
   }
 
@@ -138,25 +138,25 @@ AllToAllIntraNode::AllToAllIntraNode(
 
 AllToAllIntraNode::~AllToAllIntraNode() {
   for (unsigned i = 0; i < worldSize; i++) {
-    CUDACHECK(cudaFree(sendBuffers[i]));
+    CUDACHECK(hipFree(sendBuffers[i]));
     if (i != rank) {
-      CUDACHECK(cudaIpcCloseMemHandle(recvBuffers[i]));
-      CUDACHECK(cudaIpcCloseMemHandle(countBuffers[i]));
+      CUDACHECK(hipIpcCloseMemHandle(recvBuffers[i]));
+      CUDACHECK(hipIpcCloseMemHandle(countBuffers[i]));
     }
   }
 
-  CUDACHECK(cudaFree(recvBuffersPtr));
-  CUDACHECK(cudaFree(sendBuffersPtr));
-  CUDACHECK(cudaFree(countBuffersPtr));
-  CUDACHECK(cudaFree(localRecvCountPtr));
+  CUDACHECK(hipFree(recvBuffersPtr));
+  CUDACHECK(hipFree(sendBuffersPtr));
+  CUDACHECK(hipFree(countBuffersPtr));
+  CUDACHECK(hipFree(localRecvCountPtr));
 
-  CUDACHECK(cudaFree(tokenCount));
-  CUDACHECK(cudaFree(numTokensPerRank));
+  CUDACHECK(hipFree(tokenCount));
+  CUDACHECK(hipFree(numTokensPerRank));
 
-  CUDACHECK(cudaFree(sourceIndex));
-  CUDACHECK(cudaFree(sourceExpert));
-  CUDACHECK(cudaFree(sourceOffset));
-  CUDACHECK(cudaFree(sourceRank));
-  CUDACHECK(cudaFree(sourceToken));
-  CUDACHECK(cudaFree(tokenIndex));
+  CUDACHECK(hipFree(sourceIndex));
+  CUDACHECK(hipFree(sourceExpert));
+  CUDACHECK(hipFree(sourceOffset));
+  CUDACHECK(hipFree(sourceRank));
+  CUDACHECK(hipFree(sourceToken));
+  CUDACHECK(hipFree(tokenIndex));
 }

@@ -131,6 +131,7 @@ target_link_libraries(pplx_kernels PUBLIC
     Python::Module
 )
 if(WITH_ROCM)
+    target_include_directories(pplx_kernels PRIVATE ${OMPI_INCLUDE_DIR} ${ROCSHMEM_INCLUDE_DIR})
     target_link_libraries(pplx_kernels PUBLIC 
         hip::host
         hip::device

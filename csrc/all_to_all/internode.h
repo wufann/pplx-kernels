@@ -71,7 +71,7 @@ public:
       unsigned m,
       const unsigned *boundM,
       SplitMode splitMode,
-      cudaStream_t stream
+      hipStream_t stream
   );
 
   /// Launches the all-to-all combine kernel.
@@ -106,7 +106,7 @@ public:
       unsigned m,
       const unsigned *boundM,
       SplitMode splitMode,
-      cudaStream_t stream
+      hipStream_t stream
   );
 
 private:

@@ -16,18 +16,18 @@ DistributedNVSHMEM::DistributedNVSHMEM(unsigned rank, unsigned worldSize)
 void DistributedNVSHMEM::allToAllImpl(const void *input, void *output, size_t size, size_t count) {
   PPLX_ASSERT(count == worldSize, "count must be equal to world size");
 
-  void *srcBuffer = nvshmem_malloc(size * count);
+  void *srcBuffer = rocshmem::rocshmem_malloc(size * count);
   PPLX_ASSERT(srcBuffer != nullptr, "Failed to allocate src buffer");
-  void *dstBuffer = nvshmem_malloc(size * count);
+  void *dstBuffer = rocshmem::rocshmem_malloc(size * count);
   PPLX_ASSERT(dstBuffer != nullptr, "Failed to allocate dst buffer");
 
-  CUDACHECK(cudaMemcpy(srcBuffer, input, size * count, cudaMemcpyHostToDevice));
+  CUDACHECK(hipMemcpy(srcBuffer, input, size * count, hipMemcpyHostToDevice));
 
-  nvshmem_alltoallmem(NVSHMEM_TEAM_WORLD, dstBuffer, srcBuffer, size);
-  nvshmem_quiet();
+  // rocshmem::rocshmem_alltoallmem(ROCSHMEM_TEAM_WORLD, dstBuffer, srcBuffer, size);
+  rocshmem::rocshmem_quiet();
 
-  CUDACHECK(cudaMemcpy(output, dstBuffer, size * count, cudaMemcpyDeviceToHost));
+  CUDACHECK(hipMemcpy(output, dstBuffer, size * count, hipMemcpyDeviceToHost));
 
-  nvshmem_free(dstBuffer);
-  nvshmem_free(srcBuffer);
+  rocshmem::rocshmem_free(dstBuffer);
+  rocshmem::rocshmem_free(srcBuffer);
 }
