@@ -2,8 +2,8 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <cuda_runtime.h>
-
+// #include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 #define CUDACHECK(cmd)                                                                             \
   do {                                                                                             \
     cudaError_t e = cmd;                                                                           \

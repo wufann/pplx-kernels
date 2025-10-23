@@ -16,7 +16,7 @@ docker run -e  DISPLAY=$DISPLAY --net=host --pid=host --ipc=host \
         -v /models/:/models/ \
         -v /home/:/home/ \
         --name $MY_CONTAINER  \
-        rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.7.1 \
+        lmsysorg/sglang:v0.5.3-rocm700-mi35x \
         /bin/bash
 else
 docker start $MY_CONTAINER

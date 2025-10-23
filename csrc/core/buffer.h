@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cuda_runtime.h>
-
+// #include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 #include "core/cuda_utils.h"
 
 namespace pplx {

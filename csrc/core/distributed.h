@@ -1,7 +1,7 @@
 #pragma once
 
-#include <nvshmem.h>
-
+// #include <nvshmem.h>
+#include <rocshmem/rocshmem.hpp>
 #include <vector>
 
 namespace pplx {
