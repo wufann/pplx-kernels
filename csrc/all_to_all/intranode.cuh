@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/device_utils.cuh"
+#include "core/common_utils.h"
 
 #include <cstdint>
 

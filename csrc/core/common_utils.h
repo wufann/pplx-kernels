@@ -3,7 +3,10 @@
 #include <climits>
 #include <cstdint>
 
-#ifdef __CUDA_ARCH__
+// For HIP, always mark functions as __host__ __device__
+#if defined(__HIP_PLATFORM_AMD__)
+#define PPLX_HOST_DEVICE __host__ __device__
+#elif defined(__CUDA_ARCH__)
 #define PPLX_HOST_DEVICE __host__ __device__
 #else
 #define PPLX_HOST_DEVICE

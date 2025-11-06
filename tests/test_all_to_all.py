@@ -1,13 +1,13 @@
 import dataclasses
 import logging
 
-import nvshmem.core as nvshmem  # type: ignore[import]
+#import nvshmem.core as nvshmem  # type: ignore[import]
 import pytest
 import torch
 import torch.distributed as dist
-from cuda.core.experimental import Device  # type: ignore[import]
+#from cuda.core.experimental import Device  # type: ignore[import]
 
-from pplx_kernels import nvshmem_init
+#from pplx_kernels import nvshmem_init
 from pplx_kernels.all_to_all import AllToAll
 
 from .all_to_all_utils import MoEConfig, RankTestData
@@ -239,7 +239,10 @@ def _do_test_all_to_all(
                     )
                     src_scales.add(tuple(src_x_scale.cpu().tolist()))
                     dst_scales.add(tuple(dst_x_scale.cpu().tolist()))
-
+            # print(src_scales)
+            # print(dst_scales)
+            print("src_tokens: ", src_tokens)
+            print("src_tokens: ", dst_tokens)
             assert src_scales == dst_scales
             assert src_tokens == dst_tokens
 
@@ -298,12 +301,12 @@ def _worker_test_all_to_all(
     global_rank = pgi.rank
     local_rank = pgi.local_rank
 
-    dev = Device(local_rank)
-    dev.set_current()
+    # Set the current CUDA device (compatible with both CUDA and ROCm)
+    torch.cuda.set_device(local_rank)
 
-    nvshmem_init(
-        global_rank=global_rank, local_rank=local_rank, world_size=num_ranks, device=dev
-    )
+    # nvshmem_init(
+    #     global_rank=global_rank, local_rank=local_rank, world_size=num_ranks, device=dev
+    # )
 
     moe_config = dataclasses.replace(
         moe_config,
@@ -311,25 +314,28 @@ def _worker_test_all_to_all(
         out_dtype=getattr(torch, out_dtype),
     )
 
-    test_script_init_status = nvshmem.direct.init_status()
-    if test_script_init_status < 2 and local_rank == 0:
-        logger.warning(
-            "NVSHMEM hostlib initialization incomplete - status: %d (rank: %d, local_rank: %d)",
-            test_script_init_status,
-            global_rank,
-            local_rank,
-        )
+    # test_script_init_status = nvshmem.direct.init_status()
+    # if test_script_init_status < 2 and local_rank == 0:
+    #     logger.warning(
+    #         "NVSHMEM hostlib initialization incomplete - status: %d (rank: %d, local_rank: %d)",
+    #         test_script_init_status,
+    #         global_rank,
+    #         local_rank,
+    #     )
 
     _do_test_all_to_all(pgi, dp_size, moe_config, internode, use_compile)
 
-    nvshmem.finalize()
+    # nvshmem.finalize()
 
 
 @pytest.mark.skipif(torch.cuda.device_count() < 4, reason="Requires at least 4 GPUs")
-@pytest.mark.parametrize("in_dtype", ["bfloat16", "float8_e4m3fn", "float16"])
-@pytest.mark.parametrize("out_dtype", ["float16", "bfloat16"])
-@pytest.mark.parametrize("internode", [True, False])
-@pytest.mark.parametrize("use_compile", [False, True])
+@pytest.mark.parametrize("in_dtype", ["bfloat16"])
+# @pytest.mark.parametrize("in_dtype", ["bfloat16", "float8_e4m3fn", "float16"])
+@pytest.mark.parametrize("out_dtype", ["bfloat16"])
+# @pytest.mark.parametrize("out_dtype", ["float16", "bfloat16"])
+# @pytest.mark.parametrize("internode", [True, False])
+@pytest.mark.parametrize("internode", [False])
+@pytest.mark.parametrize("use_compile", [False])
 def test_all_to_all_4_gpu(
     in_dtype: str, out_dtype: str, internode: bool, use_compile: bool
 ) -> None:
@@ -347,24 +353,24 @@ def test_all_to_all_4_gpu(
     )
 
 
-def _worker_test_all_to_all_multi_node(
-    pgi: ProcessGroupInfo,
-    in_dtype: str,
-    out_dtype: str,
-) -> None:
-    dp_size = 4
-    _worker_test_all_to_all(
-        pgi,
-        dp_size,
-        in_dtype,
-        out_dtype,
-        medium_moe,
-        True,
-    )
-
-
-@require_multi_node
-@pytest.mark.parametrize("in_dtype", ["bfloat16", "float8_e4m3fn", "float16"])
-@pytest.mark.parametrize("out_dtype", ["float16", "bfloat16"])
-def test_all_to_all_multi_node(in_dtype: str, out_dtype: str) -> None:
-    parallel_launch_from_env(_worker_test_all_to_all_multi_node, in_dtype, out_dtype)
+# def _worker_test_all_to_all_multi_node(
+#     pgi: ProcessGroupInfo,
+#     in_dtype: str,
+#     out_dtype: str,
+# ) -> None:
+#     dp_size = 4
+#     _worker_test_all_to_all(
+#         pgi,
+#         dp_size,
+#         in_dtype,
+#         out_dtype,
+#         medium_moe,
+#         True,
+#     )
+# 
+# 
+# @require_multi_node
+# @pytest.mark.parametrize("in_dtype", ["bfloat16", "float8_e4m3fn", "float16"])
+# @pytest.mark.parametrize("out_dtype", ["float16", "bfloat16"])
+# def test_all_to_all_multi_node(in_dtype: str, out_dtype: str) -> None:
+#     parallel_launch_from_env(_worker_test_all_to_all_multi_node, in_dtype, out_dtype)

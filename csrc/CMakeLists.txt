@@ -60,7 +60,7 @@ include(FetchContent)
 if(WITH_ROCM)
     find_package(HIP REQUIRED)
     find_package(ROCM REQUIRED)
-    # find_package(ROCSHMEM REQUIRED HINTS /root/rocshmem/lib/cmake/rocshmem)
+    find_package(ROCSHMEM REQUIRED HINTS /root/rocshmem/lib/cmake/rocshmem)
     # set(MPI_DIR /opt/dependencies/ompi)
     find_package(MPI REQUIRED)
 else()
@@ -105,7 +105,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 if(WITH_ROCM)
     function(set_cuda_compile_options target)
         target_compile_options(${target} PRIVATE
-            $<$<COMPILE_LANGUAGE:HIP>:--threads=32 -O3>)
+            $<$<COMPILE_LANGUAGE:HIP>:-O3>)
     endfunction()
 else()
     function(set_cuda_compile_options target)
@@ -124,7 +124,7 @@ add_library(pplx_kernels SHARED
     bindings/bindings.cpp
 )
 target_link_libraries(pplx_kernels PUBLIC
-    all_to_all_internode_lib
+    # all_to_all_internode_lib
     all_to_all_intranode_lib
     core_lib
     torch::py_limited
@@ -136,7 +136,7 @@ if(WITH_ROCM)
         hip::host
         hip::device
         hip::amdhip64
-        /root/rocshmem/lib/librocshmem.a
+        roc::rocshmem
     )
 else()
     target_link_libraries(pplx_kernels PUBLIC

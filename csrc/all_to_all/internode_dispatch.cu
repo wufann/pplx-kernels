@@ -1,7 +1,7 @@
-#include <cooperative_groups.h>
-#include <cuda.h>
+#include <hip/hip_cooperative_groups.h>
+#include <hip/hip_runtime.h>
 #include <nvshmem.h>
-#include <nvtx3/nvToolsExt.h>
+#include <roctracer/roctx.h>
 
 #include "all_to_all/internode.h"
 #include "core/device_utils.cuh"
@@ -261,7 +261,7 @@ void AllToAllInterNode::dispatch(
     unsigned m,
     const unsigned *boundM,
     SplitMode splitMode,
-    cudaStream_t stream
+    hipStream_t stream
 ) {
   constexpr unsigned NUM_WARPS = 10;
   const unsigned numBlocks = std::min(
@@ -318,10 +318,10 @@ void AllToAllInterNode::dispatch(
       &xDispatchOut,
   };
 
-  nvtxRangePush("dispatch");
+  roctxRangePush("dispatch");
   switch (splitMode) {
   case SplitMode::SEND:
-    CUDACHECK(cudaLaunchKernel(
+    HIPCHECK(hipLaunchKernel(
         (void *)&dispatchKernel<NUM_WARPS, true, false>,
         dimGrid,
         dimBlock,
@@ -331,7 +331,7 @@ void AllToAllInterNode::dispatch(
     ));
     break;
   case SplitMode::RECV:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&dispatchKernel<NUM_WARPS, false, true>,
         dimGrid,
         dimBlock,
@@ -341,7 +341,7 @@ void AllToAllInterNode::dispatch(
     ));
     break;
   case SplitMode::NONE:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&dispatchKernel<NUM_WARPS, true, true>,
         dimGrid,
         dimBlock,
@@ -353,5 +353,5 @@ void AllToAllInterNode::dispatch(
   default:
     PPLX_UNREACHABLE("invalid split mode");
   }
-  nvtxRangePop();
+  roctxRangePop();
 }

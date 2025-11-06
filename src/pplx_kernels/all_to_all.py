@@ -125,40 +125,40 @@ class AllToAll:
             has_scales,
         )
 
-    @classmethod
-    def internode(
-        cls,
-        max_num_tokens: int,
-        num_experts: int,
-        experts_per_token: int,
-        rank: int,
-        world_size: int,
-        dp_size: int,
-        hidden_dim: int,
-        hidden_dim_bytes: int,
-        hidden_dim_scale_bytes: int,
-    ) -> "AllToAll":
-        assert world_size % dp_size == 0
-        assert world_size // dp_size > 1
+    # @classmethod
+    # def internode(
+    #     cls,
+    #     max_num_tokens: int,
+    #     num_experts: int,
+    #     experts_per_token: int,
+    #     rank: int,
+    #     world_size: int,
+    #     dp_size: int,
+    #     hidden_dim: int,
+    #     hidden_dim_bytes: int,
+    #     hidden_dim_scale_bytes: int,
+    # ) -> "AllToAll":
+    #     assert world_size % dp_size == 0
+    #     assert world_size // dp_size > 1
 
-        has_scales = hidden_dim_scale_bytes > 0
+    #     has_scales = hidden_dim_scale_bytes > 0
 
-        ptr = _ops.all_to_all_internode_create(
-            max_num_tokens,
-            num_experts,
-            experts_per_token,
-            rank,
-            world_size,
-            dp_size,
-            hidden_dim,
-            hidden_dim_bytes,
-            hidden_dim_scale_bytes,
-        )
-        assert ptr != 0
+    #     ptr = _ops.all_to_all_internode_create(
+    #         max_num_tokens,
+    #         num_experts,
+    #         experts_per_token,
+    #         rank,
+    #         world_size,
+    #         dp_size,
+    #         hidden_dim,
+    #         hidden_dim_bytes,
+    #         hidden_dim_scale_bytes,
+    #     )
+    #     assert ptr != 0
 
-        return cls(
-            ptr,
-            _ops.all_to_all_internode_combine,
-            _ops.all_to_all_internode_dispatch,
-            has_scales,
-        )
+    #     return cls(
+    #         ptr,
+    #         _ops.all_to_all_internode_combine,
+    #         _ops.all_to_all_internode_dispatch,
+    #         has_scales,
+    #     )

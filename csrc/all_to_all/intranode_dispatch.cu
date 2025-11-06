@@ -4,9 +4,9 @@
 #include "core/utils.h"
 #include "intranode.h"
 
-#include <cooperative_groups.h>
-#include <cuda.h>
-#include <nvtx3/nvToolsExt.h>
+#include <hip/hip_cooperative_groups.h>
+#include <hip/hip_runtime.h>
+#include <roctracer/roctx.h>
 
 using namespace pplx;
 
@@ -141,7 +141,7 @@ __global__ __launch_bounds__(NUM_WARPS * 32, 1) void dispatchKernel(
         } else {
           index = 0;
         }
-        index = __shfl_sync(0xffffffff, index, 0);
+        index = __shfl(index, 0);
 
         // Copy the token to the shared buffer.
         std::byte *buffer = remoteBuffer.getTokenPtr(dstRank, dstLocalExpert, index);
@@ -295,7 +295,7 @@ void AllToAllIntraNode::dispatch(
     unsigned m,
     const unsigned *boundM,
     SplitMode splitMode,
-    cudaStream_t stream
+    hipStream_t stream
 ) {
   constexpr unsigned NUM_WARPS = 16;
   const unsigned numBlocks = std::min(
@@ -351,10 +351,10 @@ void AllToAllIntraNode::dispatch(
       &sourceToken,
       &tokenIndex};
 
-  nvtxRangePush("dispatch");
+  roctxRangePush("dispatch");
   switch (splitMode) {
   case SplitMode::SEND:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&dispatchKernel<NUM_WARPS, true, false>,
         dimGrid,
         dimBlock,
@@ -364,7 +364,7 @@ void AllToAllIntraNode::dispatch(
     ));
     break;
   case SplitMode::RECV:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&dispatchKernel<NUM_WARPS, false, true>,
         dimGrid,
         dimBlock,
@@ -374,7 +374,7 @@ void AllToAllIntraNode::dispatch(
     ));
     break;
   case SplitMode::NONE:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&dispatchKernel<NUM_WARPS, true, true>,
         dimGrid,
         dimBlock,
@@ -386,5 +386,5 @@ void AllToAllIntraNode::dispatch(
   default:
     PPLX_UNREACHABLE("invalid split mode");
   }
-  nvtxRangePop();
+  roctxRangePop();
 }

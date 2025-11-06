@@ -4,6 +4,30 @@
 
 namespace pplx {
 
+#ifdef __HIP_PLATFORM_AMD__
+// HIP version using builtin atomics
+static __attribute__((always_inline)) __device__ void st_flag_volatile(uint32_t *flag_addr, uint32_t flag) {
+  __atomic_store_n(flag_addr, flag, __ATOMIC_RELAXED);
+}
+
+static __attribute__((always_inline)) __device__ uint32_t ld_flag_volatile(uint32_t *flag_addr) {
+  return __atomic_load_n(flag_addr, __ATOMIC_RELAXED);
+}
+
+static __attribute__((always_inline)) __device__ uint32_t ld_flag_acquire(uint32_t *flag_addr) {
+  return __atomic_load_n(flag_addr, __ATOMIC_ACQUIRE);
+}
+
+static __attribute__((always_inline)) __device__ void st_flag_release(uint32_t *flag_addr, uint32_t flag) {
+  __atomic_store_n(flag_addr, flag, __ATOMIC_RELEASE);
+}
+
+static __attribute__((always_inline)) __device__ uint32_t add_flag_release(uint32_t *addr, uint32_t val) {
+  return __atomic_fetch_add(addr, val, __ATOMIC_RELEASE);
+}
+
+#else
+// CUDA version using PTX assembly
 __forceinline__ __device__ void st_flag_volatile(uint32_t *flag_addr, uint32_t flag) {
   asm volatile("st.volatile.global.u32 [%1], %0;" ::"r"(flag), "l"(flag_addr));
 }
@@ -29,5 +53,6 @@ __forceinline__ __device__ uint32_t add_flag_release(uint32_t *addr, uint32_t va
   asm volatile("atom.release.sys.global.add.u32 %0, [%1], %2;" : "=r"(flag) : "l"(addr), "r"(val));
   return flag;
 }
+#endif
 
 } // namespace pplx

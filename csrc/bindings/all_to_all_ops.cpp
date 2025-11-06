@@ -1,4 +1,4 @@
-#include "all_to_all/internode.h"
+// #include "all_to_all/internode.h"
 #include "all_to_all/intranode.h"
 #include "core/distributed.h"
 
@@ -53,34 +53,34 @@ private:
   c10::intrusive_ptr<c10d::ProcessGroup> group;
 };
 
-fptr_t create_internode(
-    int64_t maxNumTokens,
-    int64_t numExperts,
-    int64_t expertsPerToken,
-    int64_t rank,
-    int64_t worldSize,
-    int64_t dpSize,
-    int64_t hiddenDim,
-    int64_t hiddenDimBytes,
-    int64_t hiddenDimScaleBytes
-) {
-  auto *ptr = new AllToAllInterNode(
-      maxNumTokens,
-      numExperts,
-      expertsPerToken,
-      rank,
-      worldSize,
-      dpSize,
-      hiddenDim,
-      hiddenDimBytes,
-      hiddenDimScaleBytes
-  );
+// fptr_t create_internode(
+//     int64_t maxNumTokens,
+//     int64_t numExperts,
+//     int64_t expertsPerToken,
+//     int64_t rank,
+//     int64_t worldSize,
+//     int64_t dpSize,
+//     int64_t hiddenDim,
+//     int64_t hiddenDimBytes,
+//     int64_t hiddenDimScaleBytes
+// ) {
+//   auto *ptr = new AllToAllInterNode(
+//       maxNumTokens,
+//       numExperts,
+//       expertsPerToken,
+//       rank,
+//       worldSize,
+//       dpSize,
+//       hiddenDim,
+//       hiddenDimBytes,
+//       hiddenDimScaleBytes
+//   );
 
-  // Needed to use host-side initialization information in device APIs.
-  rocshmem::rocshmem_init();
+//   // Needed to use host-side initialization information in device APIs.
+//   rocshmem::rocshmem_init();
 
-  return (fptr_t)ptr;
-}
+//   return (fptr_t)ptr;
+// }
 
 fptr_t create_intranode(
     int64_t maxNumTokens,
@@ -166,7 +166,7 @@ void dispatch(
       "indices.size(1) must be equal to the experts per token"
   );
 
-  at::cuda::OptionalHIPGuard const device_guard(device_of(indices));
+  // at::cuda::OptionalCUDAGuard const device_guard(device_of(indices));
 
   all_to_all->dispatch(
       Strided1D<int32_t>(
@@ -266,7 +266,7 @@ void combine(
 
   auto *all_to_all = (Kernel *)ptr;
 
-  at::cuda::OptionalHIPGuard const device_guard(device_of(indices));
+  // at::cuda::OptionalCUDAGuard const device_guard(device_of(indices));
 
   switch (expertY.scalar_type()) {
   case at::kFloat: {
@@ -335,35 +335,35 @@ namespace pplx {
 void register_all_to_all_ops(torch::Library &m) {
   m.def("all_to_all_destroy", &destroy);
 
-  m.def("all_to_all_internode_create", &create_internode);
+  // m.def("all_to_all_internode_create", &create_internode);
 
-  m.def("all_to_all_internode_dispatch("
-        "  int fptr,"
-        "  Tensor! out_expert_num_tokens,"
-        "  Tensor! out_expert_x,"
-        "  Tensor!? out_expert_x_scale,"
-        "  Tensor dp_x,"
-        "  Tensor? dp_x_scale,"
-        "  Tensor indices,"
-        "  Tensor? bound_m,"
-        "  bool do_send,"
-        "  bool do_recv"
-        ") -> ()");
-  m.impl("all_to_all_internode_dispatch", c10::kCUDA, &dispatch<AllToAllInterNode>);
-  m.impl("all_to_all_internode_dispatch", c10::kMeta, &fake_dispatch);
+  // m.def("all_to_all_internode_dispatch("
+  //       "  int fptr,"
+  //       "  Tensor! out_expert_num_tokens,"
+  //       "  Tensor! out_expert_x,"
+  //       "  Tensor!? out_expert_x_scale,"
+  //       "  Tensor dp_x,"
+  //       "  Tensor? dp_x_scale,"
+  //       "  Tensor indices,"
+  //       "  Tensor? bound_m,"
+  //       "  bool do_send,"
+  //       "  bool do_recv"
+  //       ") -> ()");
+  // m.impl("all_to_all_internode_dispatch", c10::kCUDA, &dispatch<AllToAllInterNode>);
+  // m.impl("all_to_all_internode_dispatch", c10::kMeta, &fake_dispatch);
 
-  m.def("all_to_all_internode_combine("
-        "  int fptr,"
-        "  Tensor! out_tokens,"
-        "  Tensor indices,"
-        "  Tensor weights,"
-        "  Tensor expert_y,"
-        "  Tensor? bound_m,"
-        "  bool do_send,"
-        "  bool do_recv"
-        ") -> ()");
-  m.impl("all_to_all_internode_combine", c10::kCUDA, &combine<AllToAllInterNode>);
-  m.impl("all_to_all_internode_combine", c10::kMeta, &fake_combine);
+  // m.def("all_to_all_internode_combine("
+  //       "  int fptr,"
+  //       "  Tensor! out_tokens,"
+  //       "  Tensor indices,"
+  //       "  Tensor weights,"
+  //       "  Tensor expert_y,"
+  //       "  Tensor? bound_m,"
+  //       "  bool do_send,"
+  //       "  bool do_recv"
+  //       ") -> ()");
+  // m.impl("all_to_all_internode_combine", c10::kCUDA, &combine<AllToAllInterNode>);
+  // m.impl("all_to_all_internode_combine", c10::kMeta, &fake_combine);
 
   m.def("all_to_all_intranode_create", &create_intranode);
 
@@ -380,6 +380,7 @@ void register_all_to_all_ops(torch::Library &m) {
         "  bool do_recv"
         ") -> ()");
   m.impl("all_to_all_intranode_dispatch", c10::kCUDA, &dispatch<AllToAllIntraNode>);
+  // m.impl("all_to_all_intranode_dispatch", c10::kHIP, &dispatch<AllToAllIntraNode>);
   m.impl("all_to_all_intranode_dispatch", c10::kMeta, &fake_dispatch);
 
   m.def("all_to_all_intranode_combine("
@@ -393,6 +394,7 @@ void register_all_to_all_ops(torch::Library &m) {
         "  bool do_recv"
         ") -> ()");
   m.impl("all_to_all_intranode_combine", c10::kCUDA, &combine<AllToAllIntraNode>);
+  // m.impl("all_to_all_intranode_combine", c10::kHIP, &combine<AllToAllIntraNode>);
   m.impl("all_to_all_intranode_combine", c10::kMeta, &fake_combine);
 }
 

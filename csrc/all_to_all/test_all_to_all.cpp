@@ -1,7 +1,7 @@
 // All-to-all kernel test
 
-#include <cuda.h>
-#include <cuda_profiler_api.h>
+#include <hip/hip_runtime.h>
+#include <hip/hip_profile.h>
 #include <mpi.h>
 #include <nvshmem.h>
 #include <nvshmemx.h>
@@ -45,7 +45,7 @@ template <typename S, typename T> struct std::hash<std::pair<S, T>> {
 
 template <typename T, typename Kernel, typename... Args>
 bool testDispatchCombine(
-    cudaStream_t stream,
+    hipStream_t stream,
     unsigned dpRank,
     unsigned dpSize,
     unsigned epRank,
@@ -140,7 +140,7 @@ bool testDispatchCombine(
         SplitMode::NONE,
         stream
     );
-    CUDACHECK(cudaStreamSynchronize(stream));
+    CUDACHECK(hipStreamSynchronize(stream));
 
     allToAll.combine(
         Strided1D<nv_bfloat16>(outTokensDevice, hiddenDim),
@@ -152,7 +152,7 @@ bool testDispatchCombine(
         SplitMode::NONE,
         stream
     );
-    CUDACHECK(cudaStreamSynchronize(stream));
+    CUDACHECK(hipStreamSynchronize(stream));
   }
 
   HostBuffer<int32_t> outNumTokensPerExpertHost(outTokensPerExpertDevice);
@@ -357,9 +357,9 @@ int main(int argc, char **argv) {
 
   // Set up the current rank.
   int deviceId = nvshmem_team_my_pe(NVSHMEMX_TEAM_NODE);
-  CUDACHECK(cudaSetDevice(deviceId));
-  cudaStream_t stream;
-  CUDACHECK(cudaStreamCreate(&stream));
+  CUDACHECK(hipSetDevice(deviceId));
+  hipStream_t stream;
+  CUDACHECK(hipStreamCreate(&stream));
 
   // Run the tests.
   int exit_code = EXIT_SUCCESS;
@@ -386,7 +386,7 @@ int main(int argc, char **argv) {
   }
 
   // Cleanup.
-  CUDACHECK(cudaStreamDestroy(stream));
+  CUDACHECK(hipStreamDestroy(stream));
   nvshmem_barrier_all();
   nvshmem_finalize();
   MPICHECK(MPI_Finalize());

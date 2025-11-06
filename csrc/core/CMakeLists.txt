@@ -20,11 +20,18 @@ if(WITH_ROCM)
         kernels.cu
         distributed.cpp
     )
+    # Set the language for .cu files to HIP
+    set_source_files_properties(
+        kernels.cu
+        PROPERTIES LANGUAGE HIP
+    )
+    set(ROCSHMEM_INCLUDE_DIR /root/rocshmem/include)
+    find_package(ROCSHMEM REQUIRED HINTS /root/rocshmem/lib/cmake/rocshmem)
     target_link_libraries(core_lib PUBLIC
         hip::host
         hip::device
         hip::amdhip64
-        /root/rocshmem/lib/librocshmem.a
+        roc::rocshmem
     )
     message(STATUS "OMPI_INCLUDE_DIR = ${OMPI_INCLUDE_DIR}")
     message(STATUS "ROCSHMEM_INCLUDE_DIR = ${ROCSHMEM_INCLUDE_DIR}")

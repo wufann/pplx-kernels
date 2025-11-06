@@ -2,9 +2,9 @@
 #include "core/utils.h"
 #include "internode.h"
 
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 #include <nvshmem.h>
-#include <nvtx3/nvToolsExt.h>
+#include <roctracer/roctx.h>
 
 using namespace pplx;
 
@@ -155,7 +155,7 @@ void AllToAllInterNode::combine(
     unsigned m,
     const unsigned *boundM,
     SplitMode splitMode,
-    cudaStream_t stream
+    hipStream_t stream
 ) {
   constexpr size_t NUM_WARPS = 16;
 
@@ -200,27 +200,27 @@ void AllToAllInterNode::combine(
       &xCombineIn,
       &xCombineOut};
 
-  nvtxRangePush("combine");
+  roctxRangePush("combine");
   switch (splitMode) {
   case SplitMode::SEND:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&combineKernel<T, U, NUM_WARPS, true, false>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::RECV:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&combineKernel<T, U, NUM_WARPS, false, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   case SplitMode::NONE:
-    CUDACHECK(cudaLaunchCooperativeKernel(
+    HIPCHECK(hipLaunchCooperativeKernel(
         (void *)&combineKernel<T, U, NUM_WARPS, true, true>, dimGrid, dimBlock, args, 0, stream
     ));
     break;
   default:
     PPLX_UNREACHABLE("invalid split mode");
   }
-  nvtxRangePop();
+  roctxRangePop();
 }
 
 #define INSTANTIATE_COMBINE(T, U)                                                                  \
@@ -232,12 +232,12 @@ void AllToAllInterNode::combine(
       unsigned m,                                                                                  \
       const unsigned *boundM,                                                                      \
       SplitMode splitMode,                                                                         \
-      cudaStream_t stream                                                                          \
+      hipStream_t stream                                                                           \
   );
 
-INSTANTIATE_COMBINE(float, nv_bfloat16)
-INSTANTIATE_COMBINE(float, half)
-INSTANTIATE_COMBINE(nv_bfloat16, nv_bfloat16)
-INSTANTIATE_COMBINE(nv_bfloat16, half)
-INSTANTIATE_COMBINE(half, nv_bfloat16)
-INSTANTIATE_COMBINE(half, half)
+INSTANTIATE_COMBINE(float, __hip_bfloat16)
+INSTANTIATE_COMBINE(float, __half)
+INSTANTIATE_COMBINE(hip_bfloat16, __hip_bfloat16)
+INSTANTIATE_COMBINE(hip_bfloat16, __half)
+INSTANTIATE_COMBINE(__half, __hip_bfloat16)
+INSTANTIATE_COMBINE(__half, __half)

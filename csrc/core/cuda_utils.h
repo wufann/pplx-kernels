@@ -2,16 +2,18 @@
 
 #include <cstdio>
 #include <cstdlib>
-// #include <hip/hip_runtime.h>
 #include <hip/hip_runtime.h>
+
 #define CUDACHECK(cmd)                                                                             \
   do {                                                                                             \
     hipError_t e = cmd;                                                                           \
     if (e != hipSuccess) {                                                                        \
-      printf("Failed: Cuda error %s:%d '%s'\n", __FILE__, __LINE__, hipGetErrorString(e));        \
+      printf("Failed: HIP error %s:%d '%s'\n", __FILE__, __LINE__, hipGetErrorString(e));         \
       exit(EXIT_FAILURE);                                                                          \
     }                                                                                              \
   } while (0)
+
+#define HIPCHECK(cmd) CUDACHECK(cmd)
 
 namespace pplx {
 template <typename T> T *mallocZeroBuffer(size_t size) {

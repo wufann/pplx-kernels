@@ -2,6 +2,10 @@
 
 #include "core/common_utils.h"
 
+#ifdef __HIP_PLATFORM_AMD__
+#include <hip/hip_runtime.h>
+#endif
+
 #define PPLX_ENABLE_DEVICE_ASSERT 0
 
 #if PPLX_ENABLE_DEVICE_ASSERT == 1
@@ -29,6 +33,35 @@ template <typename Kernel> struct enable_sm90_or_later : Kernel {
   }
 };
 
+#ifdef __HIP_PLATFORM_AMD__
+// HIP version
+static __attribute__((always_inline)) __device__ unsigned warp_sum(unsigned value) {
+  value += __shfl_xor(value, 16);
+  value += __shfl_xor(value, 8);
+  value += __shfl_xor(value, 4);
+  value += __shfl_xor(value, 2);
+  value += __shfl_xor(value, 1);
+  return value;
+}
+
+static __attribute__((always_inline)) __device__ bool warp_and(bool value) {
+  value &= __shfl_xor(value, 16);
+  value &= __shfl_xor(value, 8);
+  value &= __shfl_xor(value, 4);
+  value &= __shfl_xor(value, 2);
+  value &= __shfl_xor(value, 1);
+  return value;
+}
+
+static __attribute__((always_inline)) __device__ float half_warp_reduce_max(float value) {
+  value = max(value, __shfl_xor(value, 8));
+  value = max(value, __shfl_xor(value, 4));
+  value = max(value, __shfl_xor(value, 2));
+  value = max(value, __shfl_xor(value, 1));
+  return value;
+}
+#else
+// CUDA version
 __forceinline__ __device__ unsigned warp_sum(unsigned value) {
   value += __shfl_xor_sync(0xffffffff, value, 16);
   value += __shfl_xor_sync(0xffffffff, value, 8);
@@ -55,6 +88,7 @@ __forceinline__ __device__ float half_warp_reduce_max(float value) {
   value = max(value, __shfl_xor_sync(mask, value, 1));
   return value;
 }
+#endif
 
 } // namespace device
 } // namespace pplx
